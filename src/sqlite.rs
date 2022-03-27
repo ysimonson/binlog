@@ -322,7 +322,7 @@ impl<'r> SqliteRangeIterator<'r> {
 
     fn fill_entries(&mut self) -> Result<(), Error> {
         let stmt = self.datastore.conn.prepare(&self.statement_builder.log_statement(
-            "select ts, name, size, value from compacted_log",
+            "select ts, name, size, value from log",
             &self.statement_suffix(),
         ))?;
         let entries = self.get_entries(stmt)?;
