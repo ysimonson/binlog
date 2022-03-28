@@ -1,7 +1,5 @@
 use std::rc::Rc;
-use std::time::{Duration, SystemTime};
-
-use super::utils;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
@@ -12,7 +10,7 @@ pub struct Entry {
 
 impl Entry {
     pub fn new(name: Rc<String>, value: Vec<u8>) -> Entry {
-        let now = utils::duration_from_time(SystemTime::now());
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("great scott!!");
         Self::new_with_time(now, name, value)
     }
 
