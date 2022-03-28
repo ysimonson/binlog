@@ -1,0 +1,28 @@
+[package]
+name = "binary-log-fuzz"
+version = "0.0.0"
+authors = ["Automatically generated"]
+publish = false
+edition = "2018"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+arbitrary = { version = "^1.0.2", features = ["derive"] }
+libfuzzer-sys = "0.4"
+rusqlite = "0.27.0"
+
+[dependencies.binary-log]
+path = ".."
+features = ["sqlite"]
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "compare"
+path = "fuzz_targets/compare.rs"
+test = false
+doc = false
