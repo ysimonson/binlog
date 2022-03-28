@@ -109,11 +109,11 @@ fuzz_target!(|ops: Vec<Op>| {
                                 (Some(memory_value), Some(sqlite_value)) => {
                                     cmp!(memory_value, sqlite_value)
                                 }
-                                (Some(_), None) => {
-                                    panic!("sqlite range is done, but memory range is still iterating");
+                                (Some(value), None) => {
+                                    panic!("sqlite range is done, but memory range is still iterating: {:?}", value);
                                 }
-                                (None, Some(_)) => {
-                                    panic!("memory range is done, but sqlite range is still iterating");
+                                (None, Some(value)) => {
+                                    panic!("memory range is done, but sqlite range is still iterating: {:?}", value);
                                 }
                                 (None, None) => break
                             }

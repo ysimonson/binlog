@@ -98,10 +98,6 @@ impl StatementBuilder {
             Cow::Owned(format!("{} {} {}", prefix, where_clause, suffix))
         }
     }
-
-    fn pagination(&self, offset: usize) -> String {
-        format!("order by ts offset {} limit {}", offset, PAGINATION_LIMIT)
-    }
 }
 
 pub struct SqliteStore<'a> {
@@ -214,7 +210,7 @@ impl<'r> SqliteRangeIterator<'r> {
     fn fill_entries(&mut self) -> Result<(), Error> {
         let mut stmt = self.datastore.conn.prepare(&self.statement_builder.statement(
             "select ts, name, size, value from log",
-            &self.statement_builder.pagination(self.offset),
+            &format!("order by ts limit {} offset {}", PAGINATION_LIMIT, self.offset),
         ))?;
         let mut rows = stmt.query(self.statement_builder.params())?;
         let mut names = self.datastore.names.lock().unwrap();
