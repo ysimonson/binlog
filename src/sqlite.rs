@@ -1,13 +1,13 @@
 use std::borrow::Cow;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::ops::{Bound, RangeBounds};
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use std::vec::IntoIter as VecIter;
 
-use super::{Entry, Error, Range, Store};
+use super::{utils, Entry, Error, Range, Store};
 
 use bincode::{deserialize, serialize, Error as BincodeError};
 use refcount_interner::RcInterner;
@@ -42,6 +42,8 @@ create index idx_log_ts on log(ts);
 static DEFAULT_COMPRESSION_LEVEL: i32 = 1;
 static DEFAULT_COMPACTED_COMPRESSION_LEVEL: i32 = 20;
 static PAGINATION_LIMIT: usize = 1000;
+static COMPACTING_SIZE_THRESHOLD: usize = 10 * 1024 * 1024; // 10mb
+static ONE_HOUR: Duration = Duration::from_secs(60 * 60);
 
 impl From<SqliteError> for Error {
     fn from(err: SqliteError) -> Self {
@@ -60,79 +62,6 @@ struct SqliteDatastore {
     names: Arc<Mutex<RcInterner<String>>>,
 }
 
-pub struct SqliteStore<'a> {
-    datastore: SqliteDatastore,
-    entry_compressor: Arc<Mutex<Compressor<'a>>>,
-}
-
-impl<'a> SqliteStore<'a> {
-    pub fn new_with_connection(conn: Connection, entry_compression_level: Option<i32>) -> Result<Self, Error> {
-        conn.execute(SCHEMA, params![])?;
-        let compressor = Compressor::new(entry_compression_level.unwrap_or(DEFAULT_COMPRESSION_LEVEL))?;
-        Ok(Self {
-            datastore: SqliteDatastore {
-                conn,
-                names: Arc::new(Mutex::new(RcInterner::default())),
-            },
-            entry_compressor: Arc::new(Mutex::new(compressor)),
-        })
-    }
-
-    pub fn new<P: AsRef<Path>>(path: P, entry_compression_level: Option<i32>) -> Result<Self, Error> {
-        let conn = Connection::open(&path)?;
-        Self::new_with_connection(conn, entry_compression_level)
-    }
-
-    pub fn compact(&mut self) -> Result<(), Error> {
-        let tx = self.datastore.conn.transaction()?;
-
-        let names = {
-            let mut stmt = tx.prepare("select distinct name from log")?;
-            let mut rows = stmt.query([])?;
-            let mut names = Vec::new();
-            while let Some(row) = rows.next()? {
-                let name: String = row.get(0)?;
-                names.push(name);
-            }
-            names
-        };
-
-        for name in names {
-            unimplemented!();
-        }
-
-        tx.commit()?;
-        Ok(())
-    }
-}
-
-impl<'a, 'r> Store<'r> for SqliteStore<'a> {
-    type Range = SqliteRange<'r>;
-
-    fn push(&self, entry: Cow<Entry>) -> Result<(), Error> {
-        let ts: u64 = entry.time.as_micros().try_into().unwrap();
-        let blob = {
-            let mut compressor = self.entry_compressor.lock().unwrap();
-            compressor.compress(&entry.value)?
-        };
-        let mut stmt = self
-            .datastore
-            .conn
-            .prepare_cached("insert into log (ts, name, size, value) values (?, ?, ?, ?)")?;
-        let insert_count = stmt.execute(params![ts, entry.name, entry.value.len(), blob])?;
-        debug_assert_eq!(insert_count, 1);
-        Ok(())
-    }
-
-    fn range<'s, R>(&'s self, range: R, name: Option<Rc<String>>) -> Self::Range
-    where
-        's: 'r,
-        R: RangeBounds<Duration>,
-    {
-        SqliteRange::new(&self.datastore, range, name)
-    }
-}
-
 struct StatementBuilder {
     start_bound: Bound<Duration>,
     end_bound: Bound<Duration>,
@@ -140,6 +69,14 @@ struct StatementBuilder {
 }
 
 impl StatementBuilder {
+    fn new<R: RangeBounds<Duration>>(range: R, name: Option<Rc<String>>) -> StatementBuilder {
+        Self {
+            start_bound: range.start_bound().cloned(),
+            end_bound: range.end_bound().cloned(),
+            name,
+        }
+    }
+
     fn params(&self) -> ParamsFromIter<VecIter<String>> {
         if let Some(name) = &self.name {
             params_from_iter(vec![(**name).clone()].into_iter())
@@ -195,28 +132,141 @@ impl StatementBuilder {
     fn log_statement<'a>(&self, prefix: &'a str, suffix: &'a str) -> Cow<'a, str> {
         self.statement(prefix, suffix, "ts", "ts")
     }
+
+    fn pagination(&self, offset: usize) -> String {
+        format!("order by ts offset {} limit {}", offset, PAGINATION_LIMIT)
+    }
+}
+
+pub struct SqliteStore<'a> {
+    datastore: SqliteDatastore,
+    entry_compressor: Arc<Mutex<Compressor<'a>>>,
+}
+
+impl<'a> SqliteStore<'a> {
+    pub fn new_with_connection(conn: Connection, entry_compression_level: Option<i32>) -> Result<Self, Error> {
+        conn.execute(SCHEMA, params![])?;
+        let compressor = Compressor::new(entry_compression_level.unwrap_or(DEFAULT_COMPRESSION_LEVEL))?;
+        Ok(Self {
+            datastore: SqliteDatastore {
+                conn,
+                names: Arc::new(Mutex::new(RcInterner::default())),
+            },
+            entry_compressor: Arc::new(Mutex::new(compressor)),
+        })
+    }
+
+    pub fn new<P: AsRef<Path>>(path: P, entry_compression_level: Option<i32>) -> Result<Self, Error> {
+        let conn = Connection::open(&path)?;
+        Self::new_with_connection(conn, entry_compression_level)
+    }
+
+    pub fn compact(&mut self, compacted_compression_level: Option<i32>) -> Result<(), Error> {
+        let tx = self.datastore.conn.transaction()?;
+
+        let one_hour_ago = utils::duration_from_time(SystemTime::now() - Duration::from_secs(60 * 60));
+        let statement_builder = StatementBuilder::new(..one_hour_ago, None);
+        let mut offset = 0usize;
+        let mut entries_map = HashMap::<String, Vec<(u64, Duration, Vec<u8>)>>::new();
+        let mut compacted_compressor =
+            Compressor::new(compacted_compression_level.unwrap_or(DEFAULT_COMPACTED_COMPRESSION_LEVEL))?;
+        let mut entry_decompressor = Decompressor::new()?;
+
+        loop {
+            let mut stmt = tx.prepare(&statement_builder.compacted_log_statement(
+                "select id, ts, name, size, value from compacted_log",
+                &statement_builder.pagination(offset),
+            ))?;
+            let mut rows = stmt.query(statement_builder.params())?;
+            let mut has_rows = false;
+            while let Some(row) = rows.next()? {
+                let id: u64 = row.get(0)?;
+                let timestamp: u64 = row.get(1)?;
+                let time = Duration::from_micros(timestamp);
+                let name: String = row.get(2)?;
+                let size: usize = row.get(3)?;
+                let blob_compressed: Vec<u8> = row.get(4)?;
+                let blob: Vec<u8> = entry_decompressor.decompress(&blob_compressed, size)?;
+                entries_map
+                    .entry(name)
+                    .or_insert_with(Vec::default)
+                    .push((id, time, blob));
+                has_rows = true;
+            }
+            if !has_rows {
+                break;
+            }
+            offset += PAGINATION_LIMIT;
+
+            for (name, entries) in entries_map.iter_mut() {
+                let should_compact = (entries.len() >= 2 && (entries.last().unwrap().1 - entries[0].1 >= ONE_HOUR))
+                    || (entries.iter().map(|e| e.2.len()).sum::<usize>() >= COMPACTING_SIZE_THRESHOLD);
+                if should_compact {
+                    let mut compacting_size = 0usize;
+                    let mut compacting = Vec::<(u64, Duration, Vec<u8>)>::new();
+                    for entry in entries.drain(..) {
+                        if !compacting.is_empty()
+                            && (compacting_size + entry.2.len() >= COMPACTING_SIZE_THRESHOLD
+                                || entry.1 - compacting[0].1 >= ONE_HOUR)
+                        {
+                            let start_ts: u64 = compacting[0].1.as_micros().try_into().unwrap();
+                            let end_ts: u64 = compacting.last().unwrap().1.as_micros().try_into().unwrap();
+                            let blob_serialized = serialize(&compacting)?;
+                            let blob_compressed = compacted_compressor.compress(&blob_serialized)?;
+                            tx.execute("insert into compacted_log (start_ts, end_ts, name, size, count, value) values (?, ?, ?, ?, ?, ?)", params![start_ts, end_ts, name, compacting_size, compacting.len(), blob_compressed])?;
+                            tx.execute(
+                                "delete from log where name = ? and id >= ? and id <= ?",
+                                params![name, compacting[0].0, compacting.last().unwrap().0],
+                            )?;
+                            compacting_size = 0;
+                            compacting = Vec::default();
+                        }
+                        compacting_size += entry.2.len();
+                        compacting.push(entry);
+                    }
+                    *entries = compacting;
+                }
+            }
+        }
+
+        tx.commit()?;
+        Ok(())
+    }
+}
+
+impl<'a, 'r> Store<'r> for SqliteStore<'a> {
+    type Range = SqliteRange<'r>;
+
+    fn push(&self, entry: Cow<Entry>) -> Result<(), Error> {
+        let ts: u64 = entry.time.as_micros().try_into().unwrap();
+        let blob = {
+            let mut compressor = self.entry_compressor.lock().unwrap();
+            compressor.compress(&entry.value)?
+        };
+        let mut stmt = self
+            .datastore
+            .conn
+            .prepare_cached("insert into log (ts, name, size, value) values (?, ?, ?, ?)")?;
+        let insert_count = stmt.execute(params![ts, entry.name, entry.value.len(), blob])?;
+        debug_assert_eq!(insert_count, 1);
+        Ok(())
+    }
+
+    fn range<'s, R>(&'s self, range: R, name: Option<Rc<String>>) -> Self::Range
+    where
+        's: 'r,
+        R: RangeBounds<Duration>,
+    {
+        SqliteRange {
+            datastore: &self.datastore,
+            statement_builder: StatementBuilder::new(range, name),
+        }
+    }
 }
 
 pub struct SqliteRange<'r> {
     datastore: &'r SqliteDatastore,
     statement_builder: StatementBuilder,
-}
-
-impl<'r> SqliteRange<'r> {
-    fn new<R: RangeBounds<Duration>>(
-        datastore: &'r SqliteDatastore,
-        range: R,
-        name: Option<Rc<String>>,
-    ) -> SqliteRange<'r> {
-        Self {
-            datastore,
-            statement_builder: StatementBuilder {
-                start_bound: range.start_bound().cloned(),
-                end_bound: range.end_bound().cloned(),
-                name,
-            },
-        }
-    }
 }
 
 impl<'r> Range<'r> for SqliteRange<'r> {
@@ -272,14 +322,10 @@ pub struct SqliteRangeIterator<'r> {
 }
 
 impl<'r> SqliteRangeIterator<'r> {
-    fn statement_suffix(&self) -> String {
-        format!("order by ts offset {} limit {}", self.offset, PAGINATION_LIMIT)
-    }
-
     fn get_entries<'a>(&mut self, mut stmt: Statement<'a>) -> Result<Vec<Entry>, Error> {
         let mut rows = stmt.query(self.statement_builder.params())?;
-        let mut decompressor = Decompressor::new()?;
         let mut names = self.datastore.names.lock().unwrap();
+        let mut decompressor = Decompressor::new()?;
         let mut entries = Vec::new();
         while let Some(row) = rows.next()? {
             let timestamp: u64 = row.get(0)?;
@@ -291,14 +337,12 @@ impl<'r> SqliteRangeIterator<'r> {
             let blob: Vec<u8> = decompressor.decompress(&blob_compressed, size)?;
             entries.push(Entry::new_with_time(time, name, blob));
         }
-
         if entries.is_empty() {
             self.state += 1;
             self.offset = 0;
         } else {
             self.offset += PAGINATION_LIMIT;
         }
-
         Ok(entries)
     }
 
@@ -308,7 +352,7 @@ impl<'r> SqliteRangeIterator<'r> {
             .conn
             .prepare(&self.statement_builder.compacted_log_statement(
                 "select start_ts, name, size, value from compacted_log",
-                &self.statement_suffix(),
+                &self.statement_builder.pagination(self.offset),
             ))?;
         for compacted_entry in self.get_entries(stmt)?.into_iter() {
             let blob: Vec<(Duration, Vec<u8>)> = deserialize(&compacted_entry.value)?;
@@ -323,7 +367,7 @@ impl<'r> SqliteRangeIterator<'r> {
     fn fill_entries(&mut self) -> Result<(), Error> {
         let stmt = self.datastore.conn.prepare(&self.statement_builder.log_statement(
             "select ts, name, size, value from log",
-            &self.statement_suffix(),
+            &self.statement_builder.pagination(self.offset),
         ))?;
         let entries = self.get_entries(stmt)?;
         self.entries.extend(entries);
