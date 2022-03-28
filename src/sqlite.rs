@@ -21,7 +21,7 @@ create table if not exists log (
     name text not null,
     size integer not null,
     value blob not null
-) strict;
+);
 
 create index idx_log_ts on log(ts);
 "#;
