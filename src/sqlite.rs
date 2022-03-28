@@ -26,6 +26,8 @@ create table if not exists log (
 create index idx_log_ts on log(ts);
 "#;
 
+// Do not compress entries smaller than this size
+static MIN_SIZE_TO_COMPRESS: usize = 32;
 static DEFAULT_COMPRESSION_LEVEL: i32 = 1;
 static PAGINATION_LIMIT: usize = 1000;
 
@@ -131,15 +133,22 @@ impl<'a, 'r> Store<'r> for SqliteStore<'a> {
 
     fn push(&self, entry: Cow<Entry>) -> Result<(), Error> {
         let ts: u64 = entry.time.as_micros().try_into().unwrap();
-        let blob = {
+
+        let mut blob_compressed = Vec::default();
+        let mut blob_ref = &entry.value;
+        let mut size = 0;
+        if entry.value.len() >= MIN_SIZE_TO_COMPRESS {
             let mut compressor = self.compressor.lock().unwrap();
-            compressor.compress(&entry.value)?
-        };
+            blob_compressed = compressor.compress(&entry.value)?;
+            blob_ref = &blob_compressed;
+            size = entry.value.len();
+        }
+
         let mut stmt = self
             .datastore
             .conn
             .prepare_cached("insert into log (ts, name, size, value) values (?, ?, ?, ?)")?;
-        let insert_count = stmt.execute(params![ts, entry.name, entry.value.len(), blob])?;
+        let insert_count = stmt.execute(params![ts, entry.name, size, blob_ref])?;
         debug_assert_eq!(insert_count, 1);
         Ok(())
     }
@@ -217,8 +226,10 @@ impl<'r> SqliteRangeIterator<'r> {
             let name: String = row.get(1)?;
             let name: Rc<String> = names.intern(name);
             let size: usize = row.get(2)?;
-            let blob_compressed: Vec<u8> = row.get(3)?;
-            let blob: Vec<u8> = decompressor.decompress(&blob_compressed, size)?;
+            let mut blob: Vec<u8> = row.get(3)?;
+            if size > 0 {
+                blob = decompressor.decompress(&blob, size)?;
+            }
             entries.push(Entry::new_with_time(time, name, blob));
         }
         if entries.len() < PAGINATION_LIMIT {
