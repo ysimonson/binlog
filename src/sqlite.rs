@@ -213,7 +213,7 @@ impl<'r> SqliteRangeIterator<'r> {
         let mut rows = stmt.query(self.statement_builder.params())?;
         let mut names = self.datastore.names.lock().unwrap();
         let mut decompressor = Decompressor::new()?;
-        let mut entries = Vec::new();
+        let mut added = 0;
         while let Some(row) = rows.next()? {
             let timestamp: i64 = row.get(0)?;
             let time = Duration::from_micros(timestamp.try_into().unwrap());
@@ -224,9 +224,10 @@ impl<'r> SqliteRangeIterator<'r> {
             if size > 0 {
                 blob = decompressor.decompress(&blob, size)?;
             }
-            entries.push(Entry::new_with_time(time, name, blob));
+            self.entries.push_back(Entry::new_with_time(time, name, blob));
+            added += 1;
         }
-        if entries.len() < PAGINATION_LIMIT {
+        if added < PAGINATION_LIMIT {
             self.done = true;
         }
         self.offset += PAGINATION_LIMIT;
