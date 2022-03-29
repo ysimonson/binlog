@@ -26,7 +26,10 @@ impl fmt::Display for Error {
         match self {
             Error::Database(ref err) => write!(f, "database error: {}", err),
             Error::Io(ref err) => write!(f, "i/o error: {}", err),
-            Error::BadRange => write!(f, "ranges cannot be reversed, or have exclusive bounds with equal durations"),
+            Error::BadRange => write!(
+                f,
+                "ranges cannot be reversed, or have exclusive bounds with equal durations"
+            ),
             Error::TimeTooLarge => write!(f, "time value is too large"),
         }
     }

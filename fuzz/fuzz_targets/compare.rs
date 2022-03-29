@@ -119,7 +119,7 @@ fuzz_target!(|ops: Vec<Op>| {
             }
             Op::Len(range, name) => {
                 if let Some((memory_range, sqlite_range)) = get_ranges(range, name) {
-                    cmp!(memory_range.len(), sqlite_range.len());
+                    cmp!(memory_range.count(), sqlite_range.count());
                 }
             }
             Op::Remove(range, name) => {

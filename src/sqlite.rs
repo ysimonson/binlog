@@ -170,7 +170,7 @@ pub struct SqliteRange<'r> {
 impl<'r> Range<'r> for SqliteRange<'r> {
     type Iter = SqliteRangeIterator<'r>;
 
-    fn len(&self) -> Result<u64, Error> {
+    fn count(&self) -> Result<u64, Error> {
         let mut stmt = self
             .datastore
             .conn

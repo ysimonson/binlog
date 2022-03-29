@@ -16,7 +16,7 @@ pub trait Store<'r> {
 
 pub trait Range<'r> {
     type Iter: Iterator<Item = Result<Entry, Error>>;
-    fn len(&self) -> Result<u64, Error>;
+    fn count(&self) -> Result<u64, Error>;
     fn remove(self) -> Result<(), Error>;
     fn iter(self) -> Result<Self::Iter, Error>;
 }

@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::vec::IntoIter as VecIter;
 
-use super::{Entry, Error, Range, Store, utils};
+use super::{utils, Entry, Error, Range, Store};
 
 type EntriesStore = BTreeMap<Duration, Vec<(Rc<String>, Vec<u8>)>>;
 
@@ -52,7 +52,7 @@ pub struct MemoryRange {
 impl<'r> Range<'r> for MemoryRange {
     type Iter = VecIter<Result<Entry, Error>>;
 
-    fn len(&self) -> Result<u64, Error> {
+    fn count(&self) -> Result<u64, Error> {
         let mut count: u64 = 0;
         let entries = self.entries.lock().unwrap();
         for (_, entries) in entries.range((self.start_bound, self.end_bound)) {
