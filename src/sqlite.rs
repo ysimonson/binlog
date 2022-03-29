@@ -128,24 +128,22 @@ impl<'a, 'r> Store<'r> for SqliteStore<'a> {
     type Range = SqliteRange<'r>;
 
     fn push(&self, entry: Cow<Entry>) -> Result<(), Error> {
-        let ts: u64 = entry.time.as_micros().try_into().unwrap();
-
+        let ts: i64 = entry.time.as_micros().try_into().unwrap();
         let mut blob_compressed = Vec::default();
         let mut blob_ref = &entry.value;
-        let mut size = 0;
+        let mut size = 0usize;
         if entry.value.len() >= MIN_SIZE_TO_COMPRESS {
+            size = entry.value.len();
             let mut compressor = self.compressor.lock().unwrap();
             blob_compressed = compressor.compress(&entry.value)?;
             blob_ref = &blob_compressed;
-            size = entry.value.len();
         }
 
         let mut stmt = self
             .datastore
             .conn
             .prepare_cached("insert into log (ts, name, size, value) values (?, ?, ?, ?)")?;
-        let insert_count = stmt.execute(params![ts, entry.name, size, blob_ref])?;
-        debug_assert_eq!(insert_count, 1);
+        stmt.execute(params![ts, entry.name, size, blob_ref])?;
         Ok(())
     }
 
@@ -217,8 +215,8 @@ impl<'r> SqliteRangeIterator<'r> {
         let mut decompressor = Decompressor::new()?;
         let mut entries = Vec::new();
         while let Some(row) = rows.next()? {
-            let timestamp: u64 = row.get(0)?;
-            let time = Duration::from_micros(timestamp);
+            let timestamp: i64 = row.get(0)?;
+            let time = Duration::from_micros(timestamp.try_into().unwrap());
             let name: String = row.get(1)?;
             let name: Rc<String> = names.intern(name);
             let size: usize = row.get(2)?;
