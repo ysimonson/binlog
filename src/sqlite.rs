@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::vec::IntoIter as VecIter;
 
-use super::{Entry, Error, Range, Store};
+use super::{Entry, Error, Range, Store, utils};
 
 use refcount_interner::RcInterner;
 use rusqlite::Error as SqliteError;
@@ -147,15 +147,16 @@ impl<'a, 'r> Store<'r> for SqliteStore<'a> {
         Ok(())
     }
 
-    fn range<'s, R>(&'s self, range: R, name: Option<Rc<String>>) -> Self::Range
+    fn range<'s, R>(&'s self, range: R, name: Option<Rc<String>>) -> Result<Self::Range, Error>
     where
         's: 'r,
         R: RangeBounds<Duration>,
     {
-        SqliteRange {
+        utils::check_bounds(range.start_bound(), range.end_bound())?;
+        Ok(SqliteRange {
             datastore: &self.datastore,
             statement_builder: StatementBuilder::new(range, name),
-        }
+        })
     }
 }
 

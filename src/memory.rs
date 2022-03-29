@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::vec::IntoIter as VecIter;
 
-use super::{Entry, Error, Range, Store};
+use super::{Entry, Error, Range, Store, utils};
 
 type EntriesStore = BTreeMap<Duration, Vec<(Rc<String>, Vec<u8>)>>;
 
@@ -27,17 +27,18 @@ impl<'r> Store<'r> for MemoryStore {
         Ok(())
     }
 
-    fn range<'s, R>(&'s self, range: R, name: Option<Rc<String>>) -> Self::Range
+    fn range<'s, R>(&'s self, range: R, name: Option<Rc<String>>) -> Result<Self::Range, Error>
     where
         's: 'r,
         R: RangeBounds<Duration>,
     {
-        Self::Range {
+        utils::check_bounds(range.start_bound(), range.end_bound())?;
+        Ok(Self::Range {
             entries: self.entries.clone(),
             start_bound: range.start_bound().cloned(),
             end_bound: range.end_bound().cloned(),
             name,
-        }
+        })
     }
 }
 

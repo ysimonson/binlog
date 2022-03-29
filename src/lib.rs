@@ -2,6 +2,7 @@ mod errors;
 mod memory;
 mod models;
 mod traits;
+mod utils;
 
 #[cfg(feature = "sqlite")]
 mod sqlite;

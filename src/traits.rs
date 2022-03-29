@@ -8,7 +8,7 @@ use super::{Entry, Error};
 pub trait Store<'r> {
     type Range: Range<'r>;
     fn push(&self, entry: Cow<Entry>) -> Result<(), Error>;
-    fn range<'s, R>(&'s self, range: R, name: Option<Rc<String>>) -> Self::Range
+    fn range<'s, R>(&'s self, range: R, name: Option<Rc<String>>) -> Result<Self::Range, Error>
     where
         's: 'r,
         R: RangeBounds<Duration>;

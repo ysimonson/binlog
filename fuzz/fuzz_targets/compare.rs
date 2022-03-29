@@ -11,14 +11,34 @@ use arbitrary::{Arbitrary, Unstructured, Error as ArbitraryError};
 use libfuzzer_sys::fuzz_target;
 use rusqlite::Connection;
 
-macro_rules! cmp {
-    ($v1:expr, $v2:expr) => {
-        match ($v1, $v2) {
-            (Ok(v1), Ok(v2)) => {
-                assert_eq!(v1, v2);
+macro_rules! cmp_result {
+    ($memory_value:expr, $sqlite_value:expr) => {
+        match ($memory_value, $sqlite_value) {
+            (Err(memory_err), Err(sqlite_err)) => {
+                assert_eq!(format!("{:?}", memory_err), format!("{:?}", sqlite_err));
+                None
             }
-            (v1, v2) => {
-                assert_eq!(format!("{:?}", v1), format!("{:?}", v2));
+            (Err(err), Ok(_)) => {
+                panic!("sqlite result ok, but memory result errored: {}", err)
+            }
+            (Ok(_), Err(err)) => {
+                panic!("memory result ok, but sqlite result errored: {}", err)
+            }
+            (Ok(memory_value), Ok(sqlite_value)) => {
+                Some((memory_value, sqlite_value))
+            }
+        }
+    };
+}
+
+macro_rules! cmp {
+    ($memory_value:expr, $sqlite_value:expr) => {
+        match ($memory_value, $sqlite_value) {
+            (Ok(memory_value), Ok(sqlite_value)) => {
+                assert_eq!(memory_value, sqlite_value);
+            }
+            (memory_value, sqlite_value) => {
+                assert_eq!(format!("{:?}", memory_value), format!("{:?}", sqlite_value));
             }
         }
     };
@@ -80,6 +100,14 @@ fuzz_target!(|ops: Vec<Op>| {
     let memory_log = MemoryStore::default();
     let sqlite_log = SqliteStore::new_with_connection(Connection::open_in_memory().unwrap(), None).unwrap();
 
+    let get_ranges = |range: ArbitraryMicrosRange, name: Option<String>| {
+        let range = range.to_duration_range();
+        let name = name.map(Rc::new);
+        let memory_range = memory_log.range(range.clone(), name.clone());
+        let sqlite_range = sqlite_log.range(range, name);
+        cmp_result!(memory_range, sqlite_range)
+    };
+
     for op in ops {
         match op {
             Op::Push(time, name, value) => {
@@ -90,36 +118,18 @@ fuzz_target!(|ops: Vec<Op>| {
                 cmp!(memory_value, sqlite_value);
             }
             Op::Len(range, name) => {
-                let range = range.to_duration_range();
-                let name = name.map(Rc::new);
-                let memory_value = memory_log.range(range.clone(), name.clone()).len();
-                let sqlite_value = sqlite_log.range(range, name).len();
-                cmp!(memory_value, sqlite_value);
+                if let Some((memory_range, sqlite_range)) = get_ranges(range, name) {
+                    cmp!(memory_range.len(), sqlite_range.len());
+                }
             }
             Op::Remove(range, name) => {
-                let range = range.to_duration_range();
-                let name = name.map(Rc::new);
-                let memory_value = memory_log.range(range.clone(), name.clone()).remove();
-                let sqlite_value = sqlite_log.range(range, name).remove();
-                cmp!(memory_value, sqlite_value);
+                if let Some((memory_range, sqlite_range)) = get_ranges(range, name) {
+                    cmp!(memory_range.remove(), sqlite_range.remove());
+                }
             }
             Op::Iter(range, name) => {
-                let range = range.to_duration_range();
-                let name = name.map(Rc::new);
-                let memory_value = memory_log.range(range.clone(), name.clone()).iter();
-                let sqlite_value = sqlite_log.range(range, name).iter();
-
-                match (memory_value, sqlite_value) {
-                    (Err(memory_err), Err(sqlite_err)) => {
-                        assert_eq!(format!("{:?}", memory_err), format!("{:?}", sqlite_err));
-                    }
-                    (Err(memory_err), Ok(_)) => {
-                        panic!("sqlite store operation passed, but memory store operation failed: {}", memory_err);
-                    }
-                    (Ok(_), Err(sqlite_err)) => {
-                        panic!("memory store operation passed, but sqlite store operation failed: {}", sqlite_err);
-                    }
-                    (Ok(mut memory_iter), Ok(mut sqlite_iter)) => {
+                if let Some((memory_range, sqlite_range)) = get_ranges(range, name) {
+                    if let Some((mut memory_iter, mut sqlite_iter)) = cmp_result!(memory_range.iter(), sqlite_range.iter()) {
                         loop {
                             match (memory_iter.next(), sqlite_iter.next()) {
                                 (Some(memory_value), Some(sqlite_value)) => {
