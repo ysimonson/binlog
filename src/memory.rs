@@ -69,7 +69,7 @@ impl<'r> Range<'r> for MemoryRange {
         let mut entries = self.entries.lock().unwrap();
         for (_, entries) in entries.range_mut((self.start_bound, self.end_bound)) {
             if let Some(ref name) = self.name {
-                *entries = entries.drain(..).filter(|e| &e.0 == name).collect();
+                *entries = entries.drain(..).filter(|e| &e.0 != name).collect();
             } else {
                 *entries = Vec::default();
             }
