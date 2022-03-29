@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::vec::IntoIter as VecIter;
 
-use super::{Entry, Error, Range, Store, utils};
+use super::{utils, Entry, Error, Range, Store};
 
 use refcount_interner::RcInterner;
 use rusqlite::Error as SqliteError;
@@ -129,15 +129,17 @@ impl<'a, 'r> Store<'r> for SqliteStore<'a> {
 
     fn push(&self, entry: Cow<Entry>) -> Result<(), Error> {
         let ts: i64 = entry.time.as_micros().try_into().unwrap();
-        let mut blob_compressed = Vec::default();
-        let mut blob_ref = &entry.value;
-        let mut size = 0usize;
-        if entry.value.len() >= MIN_SIZE_TO_COMPRESS {
-            size = entry.value.len();
+        let (blob_compressed, size) = if entry.value.len() >= MIN_SIZE_TO_COMPRESS {
             let mut compressor = self.compressor.lock().unwrap();
-            blob_compressed = compressor.compress(&entry.value)?;
-            blob_ref = &blob_compressed;
-        }
+            (compressor.compress(&entry.value)?, entry.value.len())
+        } else {
+            (Vec::default(), 0)
+        };
+        let blob_ref = if blob_compressed.is_empty() {
+            &entry.value
+        } else {
+            &blob_compressed
+        };
 
         let mut stmt = self
             .datastore
