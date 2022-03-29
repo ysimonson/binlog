@@ -7,7 +7,6 @@ use std::io::Error as IoError;
 pub enum Error {
     Database(Box<dyn StdError + Send + Sync>),
     Io(IoError),
-    MissingName(String),
 }
 
 impl StdError for Error {
@@ -25,7 +24,6 @@ impl fmt::Display for Error {
         match self {
             Error::Database(ref err) => write!(f, "database error: {}", err),
             Error::Io(ref err) => write!(f, "i/o error: {}", err),
-            Error::MissingName(tag) => write!(f, "missing name with {}", tag),
         }
     }
 }
