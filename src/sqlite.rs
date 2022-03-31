@@ -95,13 +95,13 @@ impl StatementBuilder {
     }
 }
 
-pub struct SqliteStore<'a> {
+pub struct SqliteStore {
     conn: Connection,
     names: Arc<Mutex<RcInterner<String>>>,
-    compressor: Arc<Mutex<Compressor<'a>>>,
+    compressor: Arc<Mutex<Compressor<'static>>>,
 }
 
-impl<'a> SqliteStore<'a> {
+impl SqliteStore {
     pub fn new_with_connection(conn: Connection, compression_level: Option<i32>) -> Result<Self, Error> {
         conn.execute(SCHEMA, params![])?;
         let compressor = Compressor::new(compression_level.unwrap_or(DEFAULT_COMPRESSION_LEVEL))?;
@@ -118,7 +118,7 @@ impl<'a> SqliteStore<'a> {
     }
 }
 
-impl<'a, 'r> Store<'r> for SqliteStore<'a> {
+impl<'r> Store<'r> for SqliteStore {
     type Range = SqliteRange<'r>;
 
     fn push(&self, entry: Cow<Entry>) -> Result<(), Error> {
