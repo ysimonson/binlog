@@ -37,11 +37,6 @@ impl From<SqliteError> for Error {
     }
 }
 
-struct SqliteDatastore {
-    conn: Connection,
-    names: Arc<Mutex<RcInterner<String>>>,
-}
-
 struct StatementBuilder {
     start_bound: Bound<Duration>,
     end_bound: Bound<Duration>,
@@ -101,7 +96,8 @@ impl StatementBuilder {
 }
 
 pub struct SqliteStore<'a> {
-    datastore: SqliteDatastore,
+    conn: Connection,
+    names: Arc<Mutex<RcInterner<String>>>,
     compressor: Arc<Mutex<Compressor<'a>>>,
 }
 
@@ -110,10 +106,8 @@ impl<'a> SqliteStore<'a> {
         conn.execute(SCHEMA, params![])?;
         let compressor = Compressor::new(compression_level.unwrap_or(DEFAULT_COMPRESSION_LEVEL))?;
         Ok(Self {
-            datastore: SqliteDatastore {
-                conn,
-                names: Arc::new(Mutex::new(RcInterner::default())),
-            },
+            conn,
+            names: Arc::new(Mutex::new(RcInterner::default())),
             compressor: Arc::new(Mutex::new(compressor)),
         })
     }
@@ -142,7 +136,6 @@ impl<'a, 'r> Store<'r> for SqliteStore<'a> {
         };
 
         let mut stmt = self
-            .datastore
             .conn
             .prepare_cached("insert into log (ts, name, size, value) values (?, ?, ?, ?)")?;
         stmt.execute(params![ts, entry.name, size, blob_ref])?;
@@ -156,14 +149,16 @@ impl<'a, 'r> Store<'r> for SqliteStore<'a> {
     {
         utils::check_bounds(range.start_bound(), range.end_bound())?;
         Ok(SqliteRange {
-            datastore: &self.datastore,
+            conn: &self.conn,
+            names: self.names.clone(),
             statement_builder: StatementBuilder::new(range, name),
         })
     }
 }
 
 pub struct SqliteRange<'r> {
-    datastore: &'r SqliteDatastore,
+    conn: &'r Connection,
+    names: Arc<Mutex<RcInterner<String>>>,
     statement_builder: StatementBuilder,
 }
 
@@ -172,7 +167,6 @@ impl<'r> Range<'r> for SqliteRange<'r> {
 
     fn count(&self) -> Result<u64, Error> {
         let mut stmt = self
-            .datastore
             .conn
             .prepare(&self.statement_builder.statement("select count(id) from log", ""))?;
         let len: u64 = stmt.query_row(self.statement_builder.params(), |row| row.get(0))?;
@@ -181,7 +175,6 @@ impl<'r> Range<'r> for SqliteRange<'r> {
 
     fn remove(self) -> Result<(), Error> {
         let mut stmt = self
-            .datastore
             .conn
             .prepare(&self.statement_builder.statement("delete from log", ""))?;
         stmt.execute(self.statement_builder.params())?;
@@ -190,7 +183,8 @@ impl<'r> Range<'r> for SqliteRange<'r> {
 
     fn iter(self) -> Result<Self::Iter, Error> {
         Ok(SqliteRangeIterator {
-            datastore: self.datastore,
+            conn: self.conn,
+            names: self.names.clone(),
             statement_builder: self.statement_builder,
             entries: VecDeque::default(),
             offset: 0,
@@ -200,7 +194,8 @@ impl<'r> Range<'r> for SqliteRange<'r> {
 }
 
 pub struct SqliteRangeIterator<'r> {
-    datastore: &'r SqliteDatastore,
+    conn: &'r Connection,
+    names: Arc<Mutex<RcInterner<String>>>,
     statement_builder: StatementBuilder,
     entries: VecDeque<Entry>,
     offset: usize,
@@ -209,12 +204,12 @@ pub struct SqliteRangeIterator<'r> {
 
 impl<'r> SqliteRangeIterator<'r> {
     fn fill_entries(&mut self) -> Result<(), Error> {
-        let mut stmt = self.datastore.conn.prepare(&self.statement_builder.statement(
+        let mut stmt = self.conn.prepare(&self.statement_builder.statement(
             "select ts, name, size, value from log",
             &format!("order by ts limit {} offset {}", PAGINATION_LIMIT, self.offset),
         ))?;
         let mut rows = stmt.query(self.statement_builder.params())?;
-        let mut names = self.datastore.names.lock().unwrap();
+        let mut names = self.names.lock().unwrap();
         let mut decompressor = Decompressor::new()?;
         let mut added = 0;
         while let Some(row) = rows.next()? {
