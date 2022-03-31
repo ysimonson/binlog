@@ -1,14 +1,15 @@
 use std::borrow::Cow;
 use std::ops::RangeBounds;
-use std::rc::Rc;
 use std::time::Duration;
 
 use super::{Entry, Error};
 
+use string_cache::DefaultAtom as Atom;
+
 pub trait Store<'r> {
     type Range: Range<'r>;
     fn push(&self, entry: Cow<Entry>) -> Result<(), Error>;
-    fn range<'s, R>(&'s self, range: R, name: Option<Rc<String>>) -> Result<Self::Range, Error>
+    fn range<'s, R>(&'s self, range: R, name: Option<Atom>) -> Result<Self::Range, Error>
     where
         's: 'r,
         R: RangeBounds<Duration>;

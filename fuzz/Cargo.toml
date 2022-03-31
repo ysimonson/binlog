@@ -1,5 +1,5 @@
 [package]
-name = "binary-log-fuzz"
+name = "binlog-fuzz"
 version = "0.0.0"
 authors = ["Automatically generated"]
 publish = false
@@ -12,8 +12,9 @@ cargo-fuzz = true
 arbitrary = { version = "^1.0.2", features = ["derive"] }
 libfuzzer-sys = "0.4"
 rusqlite = "0.27.0"
+string_cache = "0.8.4"
 
-[dependencies.binary-log]
+[dependencies.binlog]
 path = ".."
 features = ["sqlite"]
 

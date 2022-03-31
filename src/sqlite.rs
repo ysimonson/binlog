@@ -2,16 +2,15 @@ use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::ops::{Bound, RangeBounds};
 use std::path::Path;
-use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::vec::IntoIter as VecIter;
 
 use super::{utils, Entry, Error, Range, Store};
 
-use refcount_interner::RcInterner;
 use rusqlite::Error as SqliteError;
 use rusqlite::{params, params_from_iter, Connection, ParamsFromIter};
+use string_cache::DefaultAtom as Atom;
 use zstd::bulk::{Compressor, Decompressor};
 
 static SCHEMA: &str = r#"
@@ -40,11 +39,11 @@ impl From<SqliteError> for Error {
 struct StatementBuilder {
     start_bound: Bound<Duration>,
     end_bound: Bound<Duration>,
-    name: Option<Rc<String>>,
+    name: Option<Atom>,
 }
 
 impl StatementBuilder {
-    fn new<R: RangeBounds<Duration>>(range: R, name: Option<Rc<String>>) -> StatementBuilder {
+    fn new<R: RangeBounds<Duration>>(range: R, name: Option<Atom>) -> StatementBuilder {
         Self {
             start_bound: range.start_bound().cloned(),
             end_bound: range.end_bound().cloned(),
@@ -54,7 +53,7 @@ impl StatementBuilder {
 
     fn params(&self) -> ParamsFromIter<VecIter<String>> {
         if let Some(name) = &self.name {
-            params_from_iter(vec![(**name).clone()].into_iter())
+            params_from_iter(vec![name.to_string()].into_iter())
         } else {
             params_from_iter(vec![].into_iter())
         }
@@ -62,7 +61,6 @@ impl StatementBuilder {
 
     fn statement<'a>(&self, prefix: &'a str, suffix: &'a str) -> Cow<'a, str> {
         let mut clauses = Vec::new();
-        let mut params = Vec::new();
 
         match self.start_bound {
             Bound::Included(s) => clauses.push(format!("ts >= {}", s.as_micros())),
@@ -76,9 +74,8 @@ impl StatementBuilder {
             Bound::Unbounded => {}
         }
 
-        if let Some(name) = &self.name {
+        if self.name.is_some() {
             clauses.push("name = ?".to_string());
-            params.push((*name).clone());
         }
 
         let where_clause = if clauses.is_empty() {
@@ -97,7 +94,6 @@ impl StatementBuilder {
 
 pub struct SqliteStore {
     conn: Connection,
-    names: Arc<Mutex<RcInterner<String>>>,
     compressor: Arc<Mutex<Compressor<'static>>>,
 }
 
@@ -107,7 +103,6 @@ impl SqliteStore {
         let compressor = Compressor::new(compression_level.unwrap_or(DEFAULT_COMPRESSION_LEVEL))?;
         Ok(Self {
             conn,
-            names: Arc::new(Mutex::new(RcInterner::default())),
             compressor: Arc::new(Mutex::new(compressor)),
         })
     }
@@ -138,11 +133,11 @@ impl<'r> Store<'r> for SqliteStore {
         let mut stmt = self
             .conn
             .prepare_cached("insert into log (ts, name, size, value) values (?, ?, ?, ?)")?;
-        stmt.execute(params![ts, entry.name, size, blob_ref])?;
+        stmt.execute(params![ts, entry.name.as_ref(), size, blob_ref])?;
         Ok(())
     }
 
-    fn range<'s, R>(&'s self, range: R, name: Option<Rc<String>>) -> Result<Self::Range, Error>
+    fn range<'s, R>(&'s self, range: R, name: Option<Atom>) -> Result<Self::Range, Error>
     where
         's: 'r,
         R: RangeBounds<Duration>,
@@ -150,7 +145,6 @@ impl<'r> Store<'r> for SqliteStore {
         utils::check_bounds(range.start_bound(), range.end_bound())?;
         Ok(SqliteRange {
             conn: &self.conn,
-            names: self.names.clone(),
             statement_builder: StatementBuilder::new(range, name),
         })
     }
@@ -158,7 +152,6 @@ impl<'r> Store<'r> for SqliteStore {
 
 pub struct SqliteRange<'r> {
     conn: &'r Connection,
-    names: Arc<Mutex<RcInterner<String>>>,
     statement_builder: StatementBuilder,
 }
 
@@ -184,7 +177,6 @@ impl<'r> Range<'r> for SqliteRange<'r> {
     fn iter(self) -> Result<Self::Iter, Error> {
         Ok(SqliteRangeIterator {
             conn: self.conn,
-            names: self.names.clone(),
             statement_builder: self.statement_builder,
             entries: VecDeque::default(),
             offset: 0,
@@ -195,7 +187,6 @@ impl<'r> Range<'r> for SqliteRange<'r> {
 
 pub struct SqliteRangeIterator<'r> {
     conn: &'r Connection,
-    names: Arc<Mutex<RcInterner<String>>>,
     statement_builder: StatementBuilder,
     entries: VecDeque<Entry>,
     offset: usize,
@@ -209,14 +200,13 @@ impl<'r> SqliteRangeIterator<'r> {
             &format!("order by ts limit {} offset {}", PAGINATION_LIMIT, self.offset),
         ))?;
         let mut rows = stmt.query(self.statement_builder.params())?;
-        let mut names = self.names.lock().unwrap();
         let mut decompressor = Decompressor::new()?;
         let mut added = 0;
         while let Some(row) = rows.next()? {
             let timestamp: i64 = row.get(0)?;
             let time = Duration::from_micros(timestamp.try_into().unwrap());
             let name: String = row.get(1)?;
-            let name: Rc<String> = names.intern(name);
+            let name: Atom = Atom::from(name);
             let size: usize = row.get(2)?;
             let mut blob: Vec<u8> = row.get(3)?;
             if size > 0 {

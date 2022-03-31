@@ -1,14 +1,15 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::ops::{Bound, RangeBounds};
-use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::vec::IntoIter as VecIter;
 
 use super::{utils, Entry, Error, Range, Store};
 
-type EntriesStore = BTreeMap<Duration, Vec<(Rc<String>, Vec<u8>)>>;
+use string_cache::DefaultAtom as Atom;
+
+type EntriesStore = BTreeMap<Duration, Vec<(Atom, Vec<u8>)>>;
 
 #[derive(Default)]
 pub struct MemoryStore {
@@ -27,7 +28,7 @@ impl<'r> Store<'r> for MemoryStore {
         Ok(())
     }
 
-    fn range<'s, R>(&'s self, range: R, name: Option<Rc<String>>) -> Result<Self::Range, Error>
+    fn range<'s, R>(&'s self, range: R, name: Option<Atom>) -> Result<Self::Range, Error>
     where
         's: 'r,
         R: RangeBounds<Duration>,
@@ -46,7 +47,7 @@ pub struct MemoryRange {
     entries: Arc<Mutex<EntriesStore>>,
     start_bound: Bound<Duration>,
     end_bound: Bound<Duration>,
-    name: Option<Rc<String>>,
+    name: Option<Atom>,
 }
 
 impl<'r> Range<'r> for MemoryRange {

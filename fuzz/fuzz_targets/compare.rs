@@ -2,14 +2,13 @@
 use std::borrow::Cow;
 use std::convert::TryInto;
 use std::ops;
-use std::rc::Rc;
 use std::time::Duration;
 
-use binary_log::{Entry, MemoryStore, SqliteStore, Store, Range};
-
-use arbitrary::{Arbitrary, Unstructured, Error as ArbitraryError};
+use arbitrary::{Arbitrary, Error as ArbitraryError, Unstructured};
+use binlog::{Entry, MemoryStore, Range, SqliteStore, Store};
 use libfuzzer_sys::fuzz_target;
 use rusqlite::Connection;
+use string_cache::DefaultAtom as Atom;
 
 macro_rules! cmp_result {
     ($memory_value:expr, $sqlite_value:expr) => {
@@ -24,9 +23,7 @@ macro_rules! cmp_result {
             (Ok(_), Err(err)) => {
                 panic!("memory result ok, but sqlite result errored: {}", err)
             }
-            (Ok(memory_value), Ok(sqlite_value)) => {
-                Some((memory_value, sqlite_value))
-            }
+            (Ok(memory_value), Ok(sqlite_value)) => Some((memory_value, sqlite_value)),
         }
     };
 }
@@ -102,8 +99,8 @@ fuzz_target!(|ops: Vec<Op>| {
 
     let get_ranges = |range: ArbitraryMicrosRange, name: Option<String>| {
         let range = range.to_duration_range();
-        let name = name.map(Rc::new);
-        let memory_range = memory_log.range(range.clone(), name.clone());
+        let name = name.map(Atom::from);
+        let memory_range = memory_log.range(range, name.clone());
         let sqlite_range = sqlite_log.range(range, name);
         cmp_result!(memory_range, sqlite_range)
     };
@@ -112,7 +109,7 @@ fuzz_target!(|ops: Vec<Op>| {
         match op {
             Op::Push(time, name, value) => {
                 let time = time.to_duration();
-                let entry = Entry::new_with_time(time, Rc::new(name), value);
+                let entry = Entry::new_with_time(time, Atom::from(name), value);
                 let memory_value = memory_log.push(Cow::Borrowed(&entry));
                 let sqlite_value = sqlite_log.push(Cow::Owned(entry));
                 cmp!(memory_value, sqlite_value);
@@ -129,7 +126,9 @@ fuzz_target!(|ops: Vec<Op>| {
             }
             Op::Iter(range, name) => {
                 if let Some((memory_range, sqlite_range)) = get_ranges(range, name) {
-                    if let Some((mut memory_iter, mut sqlite_iter)) = cmp_result!(memory_range.iter(), sqlite_range.iter()) {
+                    if let Some((mut memory_iter, mut sqlite_iter)) =
+                        cmp_result!(memory_range.iter(), sqlite_range.iter())
+                    {
                         loop {
                             match (memory_iter.next(), sqlite_iter.next()) {
                                 (Some(memory_value), Some(sqlite_value)) => {
@@ -141,7 +140,7 @@ fuzz_target!(|ops: Vec<Op>| {
                                 (None, Some(value)) => {
                                     panic!("memory range is done, but sqlite range is still iterating: {:?}", value);
                                 }
-                                (None, None) => break
+                                (None, None) => break,
                             }
                         }
                     }
