@@ -1,0 +1,17 @@
+[package]
+name = "pybinlog"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "pybinlog"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.16.1", features = ["extension-module"] }
+string_cache = "0.8.4"
+
+[dependencies.binlog]
+path = ".."
+features = ["sqlite"]
