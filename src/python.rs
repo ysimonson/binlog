@@ -2,50 +2,51 @@ use std::borrow::Cow;
 use std::convert::{TryFrom, TryInto};
 use std::time::Duration;
 
-use binlog::Store;
+use crate::{Error, Store, Entry, SqliteStore};
+
 use pyo3::exceptions::{PyIOError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use string_cache::DefaultAtom as Atom;
 
-fn map_binlog_result<T>(res: Result<T, binlog::Error>) -> PyResult<T> {
+fn map_binlog_result<T>(res: Result<T, Error>) -> PyResult<T> {
     res.map_err(|err| match err {
-        binlog::Error::Database(err) => PyRuntimeError::new_err(format!("{}", err)),
-        binlog::Error::Io(err) => PyIOError::new_err(err),
-        binlog::Error::BadRange => PyValueError::new_err("bad range"),
-        binlog::Error::TimeTooLarge => PyValueError::new_err("time too large"),
+        Error::Database(err) => PyRuntimeError::new_err(format!("{}", err)),
+        Error::Io(err) => PyIOError::new_err(err),
+        Error::BadRange => PyValueError::new_err("bad range"),
+        Error::TimeTooLarge => PyValueError::new_err("time too large"),
         _ => unimplemented!(),
     })
 }
 
 #[pyclass]
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Entry {
+pub struct PyEntry {
     pub time: i64,
     pub name: String,
     pub value: Vec<u8>,
 }
 
 #[pymethods]
-impl Entry {
+impl PyEntry {
     #[new]
     pub fn new(time: i64, name: String, value: Vec<u8>) -> PyResult<Self> {
         if time < 0 {
             Err(PyValueError::new_err("time cannot be less than 0"))
         } else {
-            Ok(Entry { time, name, value })
+            Ok(PyEntry { time, name, value })
         }
     }
 }
 
-impl TryInto<binlog::Entry> for Entry {
+impl TryInto<Entry> for PyEntry {
     type Error = PyErr;
-    fn try_into(self) -> PyResult<binlog::Entry> {
+    fn try_into(self) -> PyResult<Entry> {
         let time = self
             .time
             .try_into()
             .map_err(|_| PyValueError::new_err("time cannot be less than 0"))?;
         let duration = Duration::from_micros(time);
-        Ok(binlog::Entry::new_with_time(
+        Ok(Entry::new_with_time(
             duration,
             Atom::from(self.name),
             self.value,
@@ -53,32 +54,33 @@ impl TryInto<binlog::Entry> for Entry {
     }
 }
 
-impl TryFrom<binlog::Entry> for Entry {
+impl TryFrom<Entry> for PyEntry {
     type Error = PyErr;
-    fn try_from(entry: binlog::Entry) -> Result<Entry, PyErr> {
+    fn try_from(entry: Entry) -> Result<PyEntry, PyErr> {
         let time = entry
             .time
             .as_micros()
             .try_into()
             .map_err(|_| PyValueError::new_err("great scott!!"))?;
-        Entry::new(time, entry.name.to_string(), entry.value)
+        PyEntry::new(time, entry.name.to_string(), entry.value)
     }
 }
 
 #[pyclass]
-pub struct SqliteStore {
-    store: binlog::SqliteStore,
+pub struct PySqliteStore {
+    store: SqliteStore,
 }
 
 #[pymethods]
-impl SqliteStore {
-    pub fn push(&self, entry: Entry) -> PyResult<()> {
+impl PySqliteStore {
+    pub fn push(&self, entry: PyEntry) -> PyResult<()> {
         map_binlog_result(self.store.push(Cow::Owned(entry.try_into()?)))
     }
 }
 
 #[pymodule]
-fn pybinlog(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<Entry>()?;
+fn binlog(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<PyEntry>()?;
+    m.add_class::<PySqliteStore>()?;
     Ok(())
 }

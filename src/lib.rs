@@ -6,6 +6,8 @@ mod utils;
 
 #[cfg(feature = "sqlite")]
 mod sqlite;
+#[cfg(feature = "python")]
+mod python;
 
 pub use self::entry::Entry;
 pub use self::errors::Error;
