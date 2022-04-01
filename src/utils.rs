@@ -43,7 +43,6 @@ pub(crate) fn check_bounds(start_bound: Bound<&Duration>, end_bound: Bound<&Dura
 
 #[cfg(test)]
 mod tests {
-    use super::{check_bound, check_bounds};
     use crate::Error;
     use std::ops::Bound;
     use std::time::Duration;
@@ -58,19 +57,20 @@ mod tests {
 	}
 
     #[test]
-    fn check_bound_max_value() {
+    fn check_bound() {
         let dur = Duration::from_micros(i64::max_value() as u64);
-        assert_err!(check_bound(Bound::Included(&dur)), Ok(Some(dur)));
-    }
-
-    #[test]
-    fn check_bound_too_large_value() {
+        assert_eq!(super::check_bound(Bound::Included(&dur)).unwrap(), Some(dur));
         let dur = Duration::from_micros((i64::max_value() as u64) + 1);
-        assert_err!(check_bound(Bound::Included(&dur)), Err(Error::TimeTooLarge));
+        assert_err!(super::check_bound(Bound::Included(&dur)), Err(Error::TimeTooLarge));
+        assert_err!(super::check_bound(Bound::Unbounded).unwrap(), None);
     }
 
     #[test]
-    fn check_bound_none() {
-        assert_err!(check_bound(Bound::Unbounded), Ok(None));
+    fn check_bounds() {
+        super::check_bounds(Bound::Unbounded, Bound::Unbounded).unwrap();
+        super::check_bounds(Bound::Included(&Duration::from_micros(0)), Bound::Unbounded).unwrap();
+        // TODO: maybe this should return a BadRange?
+        super::check_bounds(Bound::Unbounded, Bound::Included(&Duration::from_micros(0))).unwrap();
+        super::check_bounds(Bound::Unbounded, Bound::Excluded(&Duration::from_micros(0))).unwrap();
     }
 }
