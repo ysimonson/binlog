@@ -6,11 +6,7 @@
 
 A rust library for creating and managing logs of arbitrary binary data.
 
-## Features
-
-* Pluggable underlying storage, with built-in support for sqlite and in-memory-only storage.
-* Python bindings, allowing you to append to the log from python.
-* Written in rust! High performance, no GC pauses, and a higher degree of safety.
+The underlying storage of logs are pluggable via the implementation of a couple of [traits](https://github.com/ysimonson/binlog/blob/main/src/traits.rs). Binlog includes built-in implementations via sqlite storage, and in-memory-only. Additionally, python bindings allow you to use (a subset of) binlog from python.
 
 ## Python bindings
 
