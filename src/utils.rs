@@ -30,9 +30,7 @@ pub(crate) fn check_bounds(start_bound: Bound<&Duration>, end_bound: Bound<&Dura
         match start_duration.cmp(&end_duration) {
             Ordering::Less => {}
             Ordering::Equal => {
-                if let Bound::Excluded(_) = end_bound {
-                    return Err(Error::BadRange);
-                } else if let Bound::Excluded(_) = start_bound {
+                if matches!(start_bound, Bound::Excluded(_)) || matches!(end_bound, Bound::Excluded(_)) {
                     return Err(Error::BadRange);
                 }
             }

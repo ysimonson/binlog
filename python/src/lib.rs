@@ -3,8 +3,8 @@ use std::convert::{TryFrom, TryInto};
 use std::time::Duration;
 
 use binlog::Store;
-use pyo3::prelude::*;
 use pyo3::exceptions::{PyIOError, PyRuntimeError, PyValueError};
+use pyo3::prelude::*;
 use string_cache::DefaultAtom as Atom;
 
 fn map_binlog_result<T>(res: Result<T, binlog::Error>) -> PyResult<T> {
@@ -40,16 +40,27 @@ impl Entry {
 impl TryInto<binlog::Entry> for Entry {
     type Error = PyErr;
     fn try_into(self) -> PyResult<binlog::Entry> {
-        let time = self.time.try_into().map_err(|_| PyValueError::new_err("time cannot be less than 0"))?;
+        let time = self
+            .time
+            .try_into()
+            .map_err(|_| PyValueError::new_err("time cannot be less than 0"))?;
         let duration = Duration::from_micros(time);
-        Ok(binlog::Entry::new_with_time(duration, Atom::from(self.name), self.value))
+        Ok(binlog::Entry::new_with_time(
+            duration,
+            Atom::from(self.name),
+            self.value,
+        ))
     }
 }
 
 impl TryFrom<binlog::Entry> for Entry {
     type Error = PyErr;
     fn try_from(entry: binlog::Entry) -> Result<Entry, PyErr> {
-        let time = entry.time.as_micros().try_into().map_err(|_| PyValueError::new_err("great scott!!"))?;
+        let time = entry
+            .time
+            .as_micros()
+            .try_into()
+            .map_err(|_| PyValueError::new_err("great scott!!"))?;
         Entry::new(time, entry.name.to_string(), entry.value)
     }
 }

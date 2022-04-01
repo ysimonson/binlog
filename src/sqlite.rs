@@ -232,10 +232,6 @@ impl<'r> Iterator for SqliteRangeIterator<'r> {
                 return Some(Err(err));
             }
         }
-        if let Some(entry) = self.entries.pop_front() {
-            Some(Ok(entry))
-        } else {
-            None
-        }
+        self.entries.pop_front().map(Ok)
     }
 }
