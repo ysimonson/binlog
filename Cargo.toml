@@ -2,6 +2,12 @@
 name = "binlog"
 version = "0.1.0"
 edition = "2021"
+authors = ["Yusuf Simonson <simonson@gmail.com>"]
+description = "A graph database library"
+keywords = ["database"]
+categories = ["database", "database-implementations"]
+license = "AGPL-3.0-or-later"
+readme = "README.md"
 
 [features]
 default = []
