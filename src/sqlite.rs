@@ -141,8 +141,7 @@ impl Store for SqliteStore {
         };
 
         let conn = self.pool.get()?;
-        let mut stmt = conn
-            .prepare_cached("insert into log (ts, name, size, value) values (?, ?, ?, ?)")?;
+        let mut stmt = conn.prepare_cached("insert into log (ts, name, size, value) values (?, ?, ?, ?)")?;
         stmt.execute(params![ts, entry.name.as_ref(), size, blob_ref])?;
         Ok(())
     }
@@ -251,4 +250,3 @@ mod tests {
         SqliteStore::new(file, None).unwrap()
     });
 }
-

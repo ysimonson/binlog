@@ -94,8 +94,7 @@ impl Range for MemoryRange {
 
 #[cfg(test)]
 mod tests {
-    use crate::{test_store_impl, define_test};
     use super::MemoryStore;
+    use crate::{define_test, test_store_impl};
     test_store_impl!(MemoryStore::default());
 }
-

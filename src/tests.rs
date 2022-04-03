@@ -26,7 +26,7 @@ macro_rules! test_store_impl {
         define_test!(push_parallel, $code);
         define_test!(remove, $code);
         define_test!(iter, $code);
-    }
+    };
 }
 
 pub fn push<S: Store>(store: &S) {
@@ -42,7 +42,11 @@ pub fn push_parallel<S: Store + Clone + 'static>(store: &S) {
         threads.push(thread::spawn(move || {
             for j in 1..11 {
                 let idx: u8 = (i * j).try_into().unwrap();
-                let entry = Entry::new_with_time(Duration::from_micros(idx.into()), Atom::from("test_push_parallel"), vec![idx]);
+                let entry = Entry::new_with_time(
+                    Duration::from_micros(idx.into()),
+                    Atom::from("test_push_parallel"),
+                    vec![idx],
+                );
                 store.push(Cow::Owned(entry)).unwrap();
             }
         }));
@@ -61,7 +65,11 @@ pub fn remove<S: Store>(store: &S) {
     assert_eq!(store.range(.., None).unwrap().count().unwrap(), 10);
     store.range(Duration::from_micros(2).., None).unwrap().remove().unwrap();
     assert_eq!(store.range(.., None).unwrap().count().unwrap(), 1);
-    store.range(.., Some(Atom::from("test_remove"))).unwrap().remove().unwrap();
+    store
+        .range(.., Some(Atom::from("test_remove")))
+        .unwrap()
+        .remove()
+        .unwrap();
     assert_eq!(store.range(.., None).unwrap().count().unwrap(), 0);
 }
 
@@ -74,6 +82,9 @@ pub fn iter<S: Store>(store: &S) {
     assert_eq!(results.len(), 10);
     for i in 1..11u8 {
         let result = results.pop_front().unwrap().unwrap();
-        assert_eq!(result, Entry::new_with_time(Duration::from_micros(i.into()), Atom::from("test_iter"), vec![i]));
+        assert_eq!(
+            result,
+            Entry::new_with_time(Duration::from_micros(i.into()), Atom::from("test_iter"), vec![i])
+        );
     }
 }
