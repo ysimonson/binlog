@@ -35,6 +35,8 @@ jobs:
 
     - name: Rust tests
       run: cargo test
+    - name: Check with benchmarks
+      run: cargo check --features=benches
     - name: Check fuzzer
       run: cd fuzz && cargo check
     - name: Clippy

@@ -98,3 +98,11 @@ mod tests {
     use crate::{define_test, test_store_impl};
     test_store_impl!(MemoryStore::default());
 }
+
+#[cfg(feature = "benches")]
+mod benches {
+    use crate::{define_bench, bench_store_impl};
+    use crate::MemoryStore;
+
+    bench_store_impl!(MemoryStore::default());
+}

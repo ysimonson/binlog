@@ -250,3 +250,15 @@ mod tests {
         SqliteStore::new(file, None).unwrap()
     });
 }
+
+#[cfg(feature = "benches")]
+mod benches {
+    use crate::{define_bench, bench_store_impl};
+    use super::SqliteStore;
+    use tempfile::NamedTempFile;
+
+    bench_store_impl!({
+        let file = NamedTempFile::new().unwrap().into_temp_path();
+        SqliteStore::new(file, None).unwrap()
+    });
+}

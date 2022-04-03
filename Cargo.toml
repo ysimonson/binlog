@@ -17,6 +17,7 @@ crate-type = ["cdylib", "rlib"]
 default = ["sqlite"]
 sqlite = ["rusqlite", "zstd", "r2d2", "r2d2_sqlite", "tempfile"]
 python = ["pyo3", "sqlite"]
+benches = []
 
 [dependencies]
 string_cache = "0.8.4"
