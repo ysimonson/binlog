@@ -28,4 +28,4 @@ A fuzzer is available, ensuring the the sqlite and in-memory datastores operate 
 
 ### Checks
 
-Lint and formatting checks can be run via `make check`. This will also be run in CI.
+Lint and formatting checks can be run via `make check`. Equivalent checks will also run in CI.

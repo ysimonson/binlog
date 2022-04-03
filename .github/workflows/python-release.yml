@@ -13,7 +13,7 @@ jobs:
       with:
         manylinux: auto
         command: build
-        args: --release -o dist --cargo-extra-args="--all-features"
+        args: --release -o dist
     - name: Upload wheels
       uses: actions/upload-artifact@v2
       with:
@@ -27,7 +27,7 @@ jobs:
     - uses: messense/maturin-action@v1
       with:
         command: build
-        args: --release --no-sdist -o dist --universal2 --cargo-extra-args="--all-features"
+        args: --release --no-sdist -o dist --universal2
     - name: Upload wheels
       uses: actions/upload-artifact@v2
       with:
