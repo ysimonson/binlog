@@ -1,10 +1,13 @@
 export RUST_BACKTRACE=1
 
-.PHONY: test fuzz check fmt
+.PHONY: bench test fuzz check fmt
 
 venv:
 	virtualenv -v venv -p python3.7
 	. venv/bin/activate && pip install maturin pytest
+
+bench:
+	cargo +nightly bench --features=benches
 
 test:
 	cargo test --all-features
