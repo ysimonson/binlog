@@ -8,7 +8,9 @@ A rust library for creating and managing logs of arbitrary binary data.
 
 The underlying storage of logs are pluggable via the implementation of a couple of [traits](https://github.com/ysimonson/binlog/blob/main/src/traits.rs). Binlog includes built-in implementations via sqlite storage, and in-memory-only. Additionally, python bindings allow you to use (a subset of) binlog from python.
 
-## Using from rust
+## Usage
+
+### From Rust
 
 A small example:
 
@@ -60,7 +62,7 @@ fn main() -> Result<(), Error> {
 
 ```
 
-## Using from python
+### From Python
 
 A small example:
 
@@ -78,7 +80,7 @@ Tests can be run via `make test`. This will also be run in CI.
 
 ### Benchmarks
 
-WIP.
+Benchmarks can be run via `make bench`.
 
 ### Fuzzing
 
