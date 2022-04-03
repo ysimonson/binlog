@@ -8,8 +8,10 @@ use std::vec::IntoIter as VecIter;
 
 use super::{utils, Entry, Error, Range, Store};
 
+use r2d2::{Error as R2d2Error, Pool};
+use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::Error as SqliteError;
-use rusqlite::{params, params_from_iter, Connection, ParamsFromIter};
+use rusqlite::{params, params_from_iter, ParamsFromIter};
 use string_cache::DefaultAtom as Atom;
 use zstd::bulk::{Compressor, Decompressor};
 
@@ -32,6 +34,12 @@ static PAGINATION_LIMIT: usize = 1000;
 
 impl From<SqliteError> for Error {
     fn from(err: SqliteError) -> Self {
+        Error::Database(Box::new(err))
+    }
+}
+
+impl From<R2d2Error> for Error {
+    fn from(err: R2d2Error) -> Self {
         Error::Database(Box::new(err))
     }
 }
@@ -92,29 +100,31 @@ impl StatementBuilder {
     }
 }
 
+#[derive(Clone)]
 pub struct SqliteStore {
-    conn: Connection,
+    pool: Pool<SqliteConnectionManager>,
     compressor: Arc<Mutex<Compressor<'static>>>,
 }
 
 impl SqliteStore {
-    pub fn new_with_connection(conn: Connection, compression_level: Option<i32>) -> Result<Self, Error> {
-        conn.execute(SCHEMA, params![])?;
+    pub fn new_with_pool(pool: Pool<SqliteConnectionManager>, compression_level: Option<i32>) -> Result<Self, Error> {
+        pool.get()?.execute(SCHEMA, params![])?;
         let compressor = Compressor::new(compression_level.unwrap_or(DEFAULT_COMPRESSION_LEVEL))?;
         Ok(Self {
-            conn,
+            pool,
             compressor: Arc::new(Mutex::new(compressor)),
         })
     }
 
     pub fn new<P: AsRef<Path>>(path: P, compression_level: Option<i32>) -> Result<Self, Error> {
-        let conn = Connection::open(&path)?;
-        Self::new_with_connection(conn, compression_level)
+        let manager = SqliteConnectionManager::file(path);
+        let pool = r2d2::Pool::new(manager)?;
+        Self::new_with_pool(pool, compression_level)
     }
 }
 
-impl<'r> Store<'r> for SqliteStore {
-    type Range = SqliteRange<'r>;
+impl Store for SqliteStore {
+    type Range = SqliteRange;
 
     fn push(&self, entry: Cow<Entry>) -> Result<(), Error> {
         let ts: i64 = entry.time.as_micros().try_into().unwrap();
@@ -130,53 +140,46 @@ impl<'r> Store<'r> for SqliteStore {
             &blob_compressed
         };
 
-        let mut stmt = self
-            .conn
-            .prepare_cached("insert into log (ts, name, size, value) values (?, ?, ?, ?)")?;
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare_cached("insert into log (ts, name, size, value) values (?, ?, ?, ?)")?;
         stmt.execute(params![ts, entry.name.as_ref(), size, blob_ref])?;
         Ok(())
     }
 
-    fn range<'s, R>(&'s self, range: R, name: Option<Atom>) -> Result<Self::Range, Error>
-    where
-        's: 'r,
-        R: RangeBounds<Duration>,
-    {
+    fn range<R: RangeBounds<Duration>>(&self, range: R, name: Option<Atom>) -> Result<Self::Range, Error> {
         utils::check_bounds(range.start_bound(), range.end_bound())?;
         Ok(SqliteRange {
-            conn: &self.conn,
+            pool: self.pool.clone(),
             statement_builder: StatementBuilder::new(range, name),
         })
     }
 }
 
-pub struct SqliteRange<'r> {
-    conn: &'r Connection,
+pub struct SqliteRange {
+    pool: Pool<SqliteConnectionManager>,
     statement_builder: StatementBuilder,
 }
 
-impl<'r> Range<'r> for SqliteRange<'r> {
-    type Iter = SqliteRangeIterator<'r>;
+impl Range for SqliteRange {
+    type Iter = SqliteRangeIterator;
 
     fn count(&self) -> Result<u64, Error> {
-        let mut stmt = self
-            .conn
-            .prepare(&self.statement_builder.statement("select count(id) from log", ""))?;
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare(&self.statement_builder.statement("select count(id) from log", ""))?;
         let len: u64 = stmt.query_row(self.statement_builder.params(), |row| row.get(0))?;
         Ok(len)
     }
 
     fn remove(self) -> Result<(), Error> {
-        let mut stmt = self
-            .conn
-            .prepare(&self.statement_builder.statement("delete from log", ""))?;
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare(&self.statement_builder.statement("delete from log", ""))?;
         stmt.execute(self.statement_builder.params())?;
         Ok(())
     }
 
     fn iter(self) -> Result<Self::Iter, Error> {
         Ok(SqliteRangeIterator {
-            conn: self.conn,
+            pool: self.pool,
             statement_builder: self.statement_builder,
             entries: VecDeque::default(),
             offset: 0,
@@ -185,17 +188,18 @@ impl<'r> Range<'r> for SqliteRange<'r> {
     }
 }
 
-pub struct SqliteRangeIterator<'r> {
-    conn: &'r Connection,
+pub struct SqliteRangeIterator {
+    pool: Pool<SqliteConnectionManager>,
     statement_builder: StatementBuilder,
     entries: VecDeque<Entry>,
     offset: usize,
     done: bool,
 }
 
-impl<'r> SqliteRangeIterator<'r> {
+impl SqliteRangeIterator {
     fn fill_entries(&mut self) -> Result<(), Error> {
-        let mut stmt = self.conn.prepare(&self.statement_builder.statement(
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare(&self.statement_builder.statement(
             "select ts, name, size, value from log",
             &format!("order by ts limit {} offset {}", PAGINATION_LIMIT, self.offset),
         ))?;
@@ -223,7 +227,7 @@ impl<'r> SqliteRangeIterator<'r> {
     }
 }
 
-impl<'r> Iterator for SqliteRangeIterator<'r> {
+impl Iterator for SqliteRangeIterator {
     type Item = Result<Entry, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -234,4 +238,15 @@ impl<'r> Iterator for SqliteRangeIterator<'r> {
         }
         self.entries.pop_front().map(Ok)
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SqliteStore;
+    use tempfile::NamedTempFile;
+
+    test_store_impl!({
+        let file = NamedTempFile::new().unwrap().into_temp_path();
+        SqliteStore::new(file, None).unwrap()
+    });
 }

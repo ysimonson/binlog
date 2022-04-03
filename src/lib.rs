@@ -3,11 +3,13 @@ mod errors;
 mod memory;
 mod traits;
 mod utils;
+#[macro_use]
+pub mod tests;
 
-#[cfg(feature = "sqlite")]
-mod sqlite;
 #[cfg(feature = "python")]
 mod python;
+#[cfg(feature = "sqlite")]
+mod sqlite;
 
 pub use self::entry::Entry;
 pub use self::errors::Error;

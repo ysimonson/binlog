@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::convert::{TryFrom, TryInto};
 use std::time::Duration;
 
-use crate::{Error, Store, Entry, SqliteStore};
+use crate::{Entry, Error, SqliteStore, Store};
 
 use pyo3::exceptions::{PyIOError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -14,7 +14,6 @@ fn map_binlog_result<T>(res: Result<T, Error>) -> PyResult<T> {
         Error::Io(err) => PyIOError::new_err(err),
         Error::BadRange => PyValueError::new_err("bad range"),
         Error::TimeTooLarge => PyValueError::new_err("time too large"),
-        _ => unimplemented!(),
     })
 }
 
@@ -46,11 +45,7 @@ impl TryInto<Entry> for PyEntry {
             .try_into()
             .map_err(|_| PyValueError::new_err("time cannot be less than 0"))?;
         let duration = Duration::from_micros(time);
-        Ok(Entry::new_with_time(
-            duration,
-            Atom::from(self.name),
-            self.value,
-        ))
+        Ok(Entry::new_with_time(duration, Atom::from(self.name), self.value))
     }
 }
 
