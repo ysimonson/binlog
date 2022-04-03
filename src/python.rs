@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::convert::{TryFrom, TryInto};
 use std::time::Duration;
 
-use crate::{Entry, Error, SqliteStore, Store};
+use crate::{Error, Store};
 
 use pyo3::exceptions::{PyIOError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -19,63 +19,63 @@ fn map_binlog_result<T>(res: Result<T, Error>) -> PyResult<T> {
 
 #[pyclass]
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PyEntry {
+pub struct Entry {
     pub time: i64,
     pub name: String,
     pub value: Vec<u8>,
 }
 
 #[pymethods]
-impl PyEntry {
+impl Entry {
     #[new]
     pub fn new(time: i64, name: String, value: Vec<u8>) -> PyResult<Self> {
         if time < 0 {
             Err(PyValueError::new_err("time cannot be less than 0"))
         } else {
-            Ok(PyEntry { time, name, value })
+            Ok(Entry { time, name, value })
         }
     }
 }
 
-impl TryInto<Entry> for PyEntry {
+impl TryInto<crate::Entry> for Entry {
     type Error = PyErr;
-    fn try_into(self) -> PyResult<Entry> {
+    fn try_into(self) -> PyResult<crate::Entry> {
         let time = self
             .time
             .try_into()
             .map_err(|_| PyValueError::new_err("time cannot be less than 0"))?;
         let duration = Duration::from_micros(time);
-        Ok(Entry::new_with_time(duration, Atom::from(self.name), self.value))
+        Ok(crate::Entry::new_with_time(duration, Atom::from(self.name), self.value))
     }
 }
 
-impl TryFrom<Entry> for PyEntry {
+impl TryFrom<crate::Entry> for Entry {
     type Error = PyErr;
-    fn try_from(entry: Entry) -> Result<PyEntry, PyErr> {
+    fn try_from(entry: crate::Entry) -> Result<Entry, PyErr> {
         let time = entry
             .time
             .as_micros()
             .try_into()
             .map_err(|_| PyValueError::new_err("great scott!!"))?;
-        PyEntry::new(time, entry.name.to_string(), entry.value)
+        Entry::new(time, entry.name.to_string(), entry.value)
     }
 }
 
 #[pyclass]
-pub struct PySqliteStore {
-    store: SqliteStore,
+pub struct SqliteStore {
+    store: crate::SqliteStore,
 }
 
 #[pymethods]
-impl PySqliteStore {
-    pub fn push(&self, entry: PyEntry) -> PyResult<()> {
+impl SqliteStore {
+    pub fn push(&self, entry: Entry) -> PyResult<()> {
         map_binlog_result(self.store.push(Cow::Owned(entry.try_into()?)))
     }
 }
 
 #[pymodule]
 fn binlog(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<PyEntry>()?;
-    m.add_class::<PySqliteStore>()?;
+    m.add_class::<Entry>()?;
+    m.add_class::<SqliteStore>()?;
     Ok(())
 }

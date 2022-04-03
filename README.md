@@ -66,8 +66,8 @@ A small example:
 
 ```python
 from binlog import binlog
-store = binlog.PySqliteStore("example.db")
-store.push(binlog.PyEntry(1, "pytest_push", [1, 2, 3]))
+store = binlog.SqliteStore("example.db")
+store.push(binlog.Entry(1, "pytest_push", [1, 2, 3]))
 ```
 
 ## Testing
