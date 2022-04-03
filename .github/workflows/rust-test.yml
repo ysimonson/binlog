@@ -33,7 +33,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v1
 
-      - run: make test check
+      - run: make test
       - run: cd fuzz && cargo check
       - run: cargo clippy
       - run: cargo fmt -- --check
