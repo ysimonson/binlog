@@ -16,7 +16,7 @@ WIP.
 
 ### Unit tests
 
-WIP.
+Tests can be run via `make test`. This will also be run in CI.
 
 ### Benchmarks
 
@@ -28,4 +28,4 @@ A fuzzer is available, ensuring the the sqlite and in-memory datastores operate 
 
 ### Checks
 
-Lint and formatting checks can be run via `make check`. Equivalent checks will be run in CI.
+Lint and formatting checks can be run via `make check`. This will also be run in CI.
