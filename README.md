@@ -26,8 +26,8 @@ fn main() -> Result<(), Error> {
     let store = SqliteStore::new("example.db", None)?;
 
     // Add 10 entries.
-    for i in 1..11 {
-        let entry = Entry::new_with_time(i, Atom::from("sqlite_example"), vec![i]);
+    for i in 1..11u8 {
+        let entry = Entry::new_with_timestamp(i as i64, Atom::from("sqlite_example"), vec![i]);
         store.push(Cow::Owned(entry))?;
     }
 
