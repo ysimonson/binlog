@@ -48,6 +48,7 @@ jobs:
         python-version: "3.7"
     - name: Install python dependencies
       run: pip install maturin pytest
+    - name: Build python library
       run: maturin develop --cargo-extra-args="--all-features"
     - name: Python tests
       run: pytest --color=yes python_tests/
