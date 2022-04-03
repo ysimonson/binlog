@@ -17,7 +17,7 @@ fn main() -> Result<(), Error> {
 
     // Add 10 entries.
     for i in 1..11 {
-        let entry = Entry::new_with_time(Duration::from_micros(i.into()), Atom::from("sqlite_example"), vec![i]);
+        let entry = Entry::new_with_time(d(i as u64), Atom::from("sqlite_example"), vec![i]);
         store.push(Cow::Owned(entry))?;
     }
 

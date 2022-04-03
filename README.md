@@ -23,16 +23,16 @@ fn d(micros: u64) -> Duration {
     Duration::from_micros(micros)
 }
 
-/// Demonstrates the sqlite store, with results in `example.db`. You may want to delete that before running this to see
-/// the results of this on an empty database.
+/// Demonstrates the sqlite store, with results in `example.db`.
 fn main() -> Result<(), Error> {
-    // Create a new datastore with sqlite backing. The result will be stored in example.db, with default compression
-    // options. In-memory is also possible via `binlog::MemoryStore::default()`.
+    // Create a new datastore with sqlite backing. The result will be stored in example.db, with
+    // default compression options. In-memory is also possible via
+    // `binlog::MemoryStore::default()`.
     let store = SqliteStore::new("example.db", None)?;
 
     // Add 10 entries.
     for i in 1..11 {
-        let entry = Entry::new_with_time(Duration::from_micros(i.into()), Atom::from("sqlite_example"), vec![i]);
+        let entry = Entry::new_with_time(d(i as u64), Atom::from("sqlite_example"), vec![i]);
         store.push(Cow::Owned(entry))?;
     }
 
@@ -57,6 +57,7 @@ fn main() -> Result<(), Error> {
 
     Ok(())
 }
+
 ```
 
 ## Using from python
