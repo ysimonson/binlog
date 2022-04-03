@@ -242,10 +242,10 @@ impl Iterator for SqliteRangeIterator {
 
 #[cfg(test)]
 mod tests {
-    use super::SqliteStore;
-    use tempfile::NamedTempFile;
-
+    use crate::{define_test, test_store_impl};
     test_store_impl!({
+        use super::SqliteStore;
+        use tempfile::NamedTempFile;
         let file = NamedTempFile::new().unwrap().into_temp_path();
         SqliteStore::new(file, None).unwrap()
     });
@@ -254,10 +254,9 @@ mod tests {
 #[cfg(feature = "benches")]
 mod benches {
     use crate::{define_bench, bench_store_impl};
-    use super::SqliteStore;
-    use tempfile::NamedTempFile;
-
     bench_store_impl!({
+        use super::SqliteStore;
+        use tempfile::NamedTempFile;
         let file = NamedTempFile::new().unwrap().into_temp_path();
         SqliteStore::new(file, None).unwrap()
     });

@@ -53,6 +53,6 @@ jobs:
     - name: Setup virtualenv
       run: make venv
     - name: Build python library
-      run: source venv/bin/activate && maturin develop --cargo-extra-args="--all-features"
+      run: source venv/bin/activate && maturin develop --cargo-extra-args="--features=python"
     - name: Python tests
       run: source venv/bin/activate && pytest --color=yes python_tests/
