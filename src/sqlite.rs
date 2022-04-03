@@ -108,7 +108,11 @@ pub struct SqliteStore {
 
 impl SqliteStore {
     pub fn new_with_pool(pool: Pool<SqliteConnectionManager>, compression_level: Option<i32>) -> Result<Self, Error> {
-        pool.get()?.execute(SCHEMA, params![])?;
+        {
+            let conn = pool.get()?;
+            conn.pragma_update(None, "journal_mode", "wal2")?;
+            conn.execute(SCHEMA, params![])?;
+        }
         let compressor = Compressor::new(compression_level.unwrap_or(DEFAULT_COMPRESSION_LEVEL))?;
         Ok(Self {
             pool,
