@@ -68,6 +68,13 @@ pub struct SqliteStore {
 
 #[pymethods]
 impl SqliteStore {
+    #[new]
+    pub fn new(path: String, compression_level: Option<i32>) -> PyResult<Self> {
+        Ok(Self {
+            store: map_binlog_result(crate::SqliteStore::new(path, compression_level))?,
+        })
+    }
+
     pub fn push(&self, entry: Entry) -> PyResult<()> {
         map_binlog_result(self.store.push(Cow::Owned(entry.try_into()?)))
     }
