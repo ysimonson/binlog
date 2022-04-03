@@ -5,7 +5,7 @@ use std::ops;
 use std::time::Duration;
 
 use arbitrary::{Arbitrary, Error as ArbitraryError, Unstructured};
-use binlog::{Entry, MemoryStore, Range, SqliteStore, Store};
+use binlog::{Entry, MemoryStore, Range, RangeableStore, SqliteStore, Store};
 use libfuzzer_sys::fuzz_target;
 use string_cache::DefaultAtom as Atom;
 use tempfile::NamedTempFile;
