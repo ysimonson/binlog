@@ -33,26 +33,9 @@ jobs:
 
     - uses: Swatinem/rust-cache@v1
 
-    - name: Rust tests
-      run: cargo test
-    - name: Check with benchmarks
-      run: cargo check --features=benches
-    - name: Check fuzzer
-      run: cd fuzz && cargo check
-    - name: Clippy
-      run: cargo clippy
-    - name: Check formatting
-      run: cargo fmt -- --check
-
     - name: Setup Python
       uses: actions/setup-python@v2
       with:
         python-version: "3.7"
-    - name: Install virtualenv
-      run: pip install virtualenv
-    - name: Setup virtualenv
-      run: make venv
-    - name: Build python library
-      run: source venv/bin/activate && maturin develop --cargo-extra-args="--features=python"
-    - name: Python tests
-      run: source venv/bin/activate && pytest --color=yes python_tests/
+
+    - run: ./scripts/ci.sh "${{ matrix.rust }}" "${{ matrix.os }}"
