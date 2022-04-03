@@ -47,7 +47,6 @@ dependencies = [
  "arbitrary",
  "binlog",
  "libfuzzer-sys",
- "rusqlite",
  "string_cache",
  "tempfile",
 ]

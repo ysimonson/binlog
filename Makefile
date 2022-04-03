@@ -12,11 +12,9 @@ check:
 	cargo +stable check --all-features
 	cargo +nightly check --all-features
 	cd fuzz && cargo +stable check
-	cd python && cargo +stable check
 	cargo +stable clippy --all-features
 	cargo fmt -- --check
 
 fmt:
 	cargo fmt
 	cd fuzz && cargo fmt
-	cd python && cargo fmt
