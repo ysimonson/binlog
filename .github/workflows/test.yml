@@ -1,4 +1,4 @@
-name: Rust tests
+name: Tests
 
 env:
   RUST_BACKTRACE: 1
@@ -33,7 +33,21 @@ jobs:
 
     - uses: Swatinem/rust-cache@v1
 
-    - run: cargo test
-    - run: cd fuzz && cargo check
-    - run: cargo clippy
-    - run: cargo fmt -- --check
+    - name: Rust tests
+      run: cargo test
+    - name: Check fuzzer
+      run: cd fuzz && cargo check
+    - name: Clippy
+      run: cargo clippy
+    - name: Check formatting
+      run: cargo fmt -- --check
+
+    - name: Setup Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: "3.7"
+    - name: Install python dependencies
+      run: pip install maturin pytest
+      run: maturin develop --cargo-extra-args="--all-features"
+    - name: Python tests
+      run: pytest --color=yes python_tests/
