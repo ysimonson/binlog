@@ -49,9 +49,7 @@ jobs:
     - name: Install virtualenv
       run: pip install virtualenv
     - name: Setup virtualenv
-      run: virtualenv -v venv -p python3.7
-    - name: Install python dependencies
-      run: source venv/bin/activate && pip install maturin pytest
+      run: make venv
     - name: Build python library
       run: source venv/bin/activate && maturin develop --cargo-extra-args="--all-features"
     - name: Python tests
