@@ -11,12 +11,12 @@ use string_cache::DefaultAtom as Atom;
 
 type EntriesStore = BTreeMap<Duration, Vec<(Atom, Vec<u8>)>>;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct MemoryStore {
     entries: Arc<Mutex<EntriesStore>>,
 }
 
-impl<'r> Store<'r> for MemoryStore {
+impl Store for MemoryStore {
     type Range = MemoryRange;
 
     fn push(&self, entry: Cow<Entry>) -> Result<(), Error> {
@@ -28,11 +28,7 @@ impl<'r> Store<'r> for MemoryStore {
         Ok(())
     }
 
-    fn range<'s, R>(&'s self, range: R, name: Option<Atom>) -> Result<Self::Range, Error>
-    where
-        's: 'r,
-        R: RangeBounds<Duration>,
-    {
+    fn range<R: RangeBounds<Duration>>(&self, range: R, name: Option<Atom>) -> Result<Self::Range, Error> {
         utils::check_bounds(range.start_bound(), range.end_bound())?;
         Ok(Self::Range {
             entries: self.entries.clone(),
@@ -50,7 +46,7 @@ pub struct MemoryRange {
     name: Option<Atom>,
 }
 
-impl<'r> Range<'r> for MemoryRange {
+impl Range for MemoryRange {
     type Iter = VecIter<Result<Entry, Error>>;
 
     fn count(&self) -> Result<u64, Error> {
@@ -95,3 +91,11 @@ impl<'r> Range<'r> for MemoryRange {
         Ok(returnable_entries.into_iter())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{test_store_impl, define_test};
+    use super::MemoryStore;
+    test_store_impl!(MemoryStore::default());
+}
+

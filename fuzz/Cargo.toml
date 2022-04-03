@@ -11,8 +11,8 @@ cargo-fuzz = true
 [dependencies]
 arbitrary = { version = "^1.0.2", features = ["derive"] }
 libfuzzer-sys = "0.4"
-rusqlite = "0.27.0"
 string_cache = "0.8.4"
+tempfile = { version = "^3.3.0" }
 
 [dependencies.binlog]
 path = ".."

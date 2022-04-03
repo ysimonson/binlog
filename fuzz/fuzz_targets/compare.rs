@@ -7,8 +7,8 @@ use std::time::Duration;
 use arbitrary::{Arbitrary, Error as ArbitraryError, Unstructured};
 use binlog::{Entry, MemoryStore, Range, SqliteStore, Store};
 use libfuzzer_sys::fuzz_target;
-use rusqlite::Connection;
 use string_cache::DefaultAtom as Atom;
+use tempfile::NamedTempFile;
 
 macro_rules! cmp_result {
     ($memory_value:expr, $sqlite_value:expr) => {
@@ -94,8 +94,10 @@ impl ArbitraryMicrosRange {
 }
 
 fuzz_target!(|ops: Vec<Op>| {
+    let file = NamedTempFile::new().unwrap().into_temp_path();
+
     let memory_log = MemoryStore::default();
-    let sqlite_log = SqliteStore::new_with_connection(Connection::open_in_memory().unwrap(), None).unwrap();
+    let sqlite_log = SqliteStore::new(file, None).unwrap();
 
     let get_ranges = |range: ArbitraryMicrosRange, name: Option<String>| {
         let range = range.to_duration_range();
