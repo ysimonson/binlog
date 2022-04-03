@@ -2,14 +2,13 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::ops::{Bound, RangeBounds};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use std::vec::IntoIter as VecIter;
 
-use super::{utils, Entry, Error, Range, Store};
+use super::{Entry, Error, Range, Store};
 
 use string_cache::DefaultAtom as Atom;
 
-type EntriesStore = BTreeMap<Duration, Vec<(Atom, Vec<u8>)>>;
+type EntriesStore = BTreeMap<i64, Vec<(Atom, Vec<u8>)>>;
 
 #[derive(Clone, Default)]
 pub struct MemoryStore {
@@ -22,14 +21,13 @@ impl Store for MemoryStore {
     fn push(&self, entry: Cow<Entry>) -> Result<(), Error> {
         let mut entries = self.entries.lock().unwrap();
         entries
-            .entry(entry.time)
+            .entry(entry.timestamp)
             .or_insert_with(Vec::default)
             .push((entry.name.clone(), entry.value.clone()));
         Ok(())
     }
 
-    fn range<R: RangeBounds<Duration>>(&self, range: R, name: Option<Atom>) -> Result<Self::Range, Error> {
-        utils::check_bounds(range.start_bound(), range.end_bound())?;
+    fn range<R: RangeBounds<i64>>(&self, range: R, name: Option<Atom>) -> Result<Self::Range, Error> {
         Ok(Self::Range {
             entries: self.entries.clone(),
             start_bound: range.start_bound().cloned(),
@@ -41,8 +39,8 @@ impl Store for MemoryStore {
 
 pub struct MemoryRange {
     entries: Arc<Mutex<EntriesStore>>,
-    start_bound: Bound<Duration>,
-    end_bound: Bound<Duration>,
+    start_bound: Bound<i64>,
+    end_bound: Bound<i64>,
     name: Option<Atom>,
 }
 
@@ -77,14 +75,22 @@ impl Range for MemoryRange {
     fn iter(self) -> Result<Self::Iter, Error> {
         let mut returnable_entries = Vec::default();
         let entries = self.entries.lock().unwrap();
-        for (time, entries) in entries.range((self.start_bound, self.end_bound)) {
+        for (timestamp, entries) in entries.range((self.start_bound, self.end_bound)) {
             if let Some(ref name) = self.name {
                 for entry in entries.iter().filter(|e| &e.0 == name) {
-                    returnable_entries.push(Ok(Entry::new_with_time(*time, entry.0.clone(), entry.1.clone())));
+                    returnable_entries.push(Ok(Entry::new_with_timestamp(
+                        *timestamp,
+                        entry.0.clone(),
+                        entry.1.clone(),
+                    )));
                 }
             } else {
                 for entry in entries.iter() {
-                    returnable_entries.push(Ok(Entry::new_with_time(*time, entry.0.clone(), entry.1.clone())));
+                    returnable_entries.push(Ok(Entry::new_with_timestamp(
+                        *timestamp,
+                        entry.0.clone(),
+                        entry.1.clone(),
+                    )));
                 }
             }
         }

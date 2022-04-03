@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::ops::RangeBounds;
-use std::time::Duration;
 
 use super::{Entry, Error};
 
@@ -9,7 +8,7 @@ use string_cache::DefaultAtom as Atom;
 pub trait Store: Send + Sync {
     type Range: Range;
     fn push(&self, entry: Cow<Entry>) -> Result<(), Error>;
-    fn range<R: RangeBounds<Duration>>(&self, range: R, name: Option<Atom>) -> Result<Self::Range, Error>;
+    fn range<R: RangeBounds<i64>>(&self, range: R, name: Option<Atom>) -> Result<Self::Range, Error>;
 }
 
 pub trait Range {

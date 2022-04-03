@@ -8,7 +8,6 @@ pub enum Error {
     Database(Box<dyn StdError + Send + Sync>),
     Io(IoError),
     BadRange,
-    TimeTooLarge,
 }
 
 impl StdError for Error {
@@ -30,7 +29,6 @@ impl fmt::Display for Error {
                 f,
                 "ranges cannot be reversed, or have exclusive bounds with equal durations"
             ),
-            Error::TimeTooLarge => write!(f, "time value is too large"),
         }
     }
 }
