@@ -1,3 +1,7 @@
+#![cfg_attr(feature = "benches", feature(test))]
+#[cfg(feature = "benches")]
+extern crate test;
+
 mod entry;
 mod errors;
 mod memory;
@@ -10,6 +14,9 @@ pub mod tests;
 mod python;
 #[cfg(feature = "sqlite")]
 mod sqlite;
+#[cfg(feature = "benches")]
+#[macro_use]
+pub mod benches;
 
 pub use self::entry::Entry;
 pub use self::errors::Error;
