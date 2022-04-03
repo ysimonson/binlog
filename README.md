@@ -62,7 +62,13 @@ fn main() -> Result<(), Error> {
 
 ## Using from python
 
-WIP.
+A small example:
+
+```python
+from binlog import binlog
+store = binlog.PySqliteStore("example.db")
+store.push(binlog.PyEntry(1, "pytest_push", [1, 2, 3]))
+```
 
 ## Testing
 
