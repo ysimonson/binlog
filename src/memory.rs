@@ -94,7 +94,18 @@ impl Range for MemoryRange {
 
 #[cfg(test)]
 mod tests {
-    use super::MemoryStore;
     use crate::{define_test, test_store_impl};
-    test_store_impl!(MemoryStore::default());
+    test_store_impl!({
+        use super::MemoryStore;
+        MemoryStore::default()
+    });
+}
+
+#[cfg(feature = "benches")]
+mod benches {
+    use crate::{bench_store_impl, define_bench};
+    bench_store_impl!({
+        use crate::MemoryStore;
+        MemoryStore::default()
+    });
 }
