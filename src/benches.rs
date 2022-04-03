@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::thread;
 use std::time::Duration;
 
-use crate::{Entry, Error, Range, Store};
+use crate::{Entry, Range, Store};
 
 use string_cache::Atom;
 use test::Bencher;
@@ -64,7 +64,6 @@ pub fn iter<S: Store>(b: &mut Bencher, store: &S) {
         store.push(Cow::Owned(entry)).unwrap();
     }
     b.iter(|| {
-        let results: Vec<Result<Entry, Error>> = store.range(.., None).unwrap().iter().unwrap().collect();
-        assert_eq!(results.len(), 256);
+        assert_eq!(store.range(.., None).unwrap().iter().unwrap().count(), 256);
     });
 }

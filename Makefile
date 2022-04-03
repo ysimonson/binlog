@@ -19,10 +19,10 @@ fuzz:
 	cargo +nightly fuzz run compare
 
 check:
-	cargo +stable check --all-features
+	cargo +stable check
 	cargo +nightly check --all-features
 	cd fuzz && cargo +stable check
-	cargo +stable clippy --all-features
+	cargo +nightly clippy --all-features
 	cargo fmt -- --check
 
 fmt:
