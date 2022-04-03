@@ -4,7 +4,7 @@ export RUST_BACKTRACE=1
 
 venv:
 	virtualenv -v venv -p python3.7
-	pip install maturin pytest
+	. venv/bin/activate && pip install maturin pytest
 
 test:
 	cargo test --all-features
