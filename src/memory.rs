@@ -4,7 +4,7 @@ use std::ops::{Bound, RangeBounds};
 use std::sync::{Arc, Mutex};
 use std::vec::IntoIter as VecIter;
 
-use super::{Entry, Error, Range, Store, utils};
+use super::{utils, Entry, Error, Range, Store};
 
 use string_cache::DefaultAtom as Atom;
 

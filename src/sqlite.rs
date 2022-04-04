@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::vec::IntoIter as VecIter;
 
-use super::{Entry, Error, Range, Store, utils};
+use super::{utils, Entry, Error, Range, Store};
 
 use r2d2::{Error as R2d2Error, Pool};
 use r2d2_sqlite::SqliteConnectionManager;

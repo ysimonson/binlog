@@ -4,16 +4,10 @@ use super::Error;
 
 pub(crate) fn check_bounds(start_bound: Bound<&i64>, end_bound: Bound<&i64>) -> Result<(), Error> {
     match (start_bound, end_bound) {
-        (Bound::Included(s), Bound::Included(e)) if s < e => {
-            Err(Error::BadRange)
-        },
-        (Bound::Included(s), Bound::Excluded(e)) if s <= e => {
-            Err(Error::BadRange)
-        },
-        (Bound::Excluded(s), Bound::Included(e)) if s <= e => {
-            Err(Error::BadRange)
-        },
-        _ => Ok(())
+        (Bound::Included(s), Bound::Included(e)) if s < e => Err(Error::BadRange),
+        (Bound::Included(s), Bound::Excluded(e)) if s <= e => Err(Error::BadRange),
+        (Bound::Excluded(s), Bound::Included(e)) if s <= e => Err(Error::BadRange),
+        _ => Ok(()),
     }
 }
 
