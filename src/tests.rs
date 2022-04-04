@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::collections::VecDeque;
-use std::time::Duration;
 
 use crate::{Entry, Error, Range, RangeableStore};
 
@@ -28,11 +27,11 @@ macro_rules! test_rangeable_store_impl {
 
 pub fn remove<S: RangeableStore>(store: &S) {
     for i in 1..11 {
-        let entry = Entry::new_with_time(Duration::from_micros(i.into()), Atom::from("test_remove"), vec![i]);
+        let entry = Entry::new_with_timestamp(i.into(), Atom::from("test_remove"), vec![i]);
         store.push(Cow::Owned(entry)).unwrap();
     }
     assert_eq!(store.range(.., None).unwrap().count().unwrap(), 10);
-    store.range(Duration::from_micros(2).., None).unwrap().remove().unwrap();
+    store.range(2.., None).unwrap().remove().unwrap();
     assert_eq!(store.range(.., None).unwrap().count().unwrap(), 1);
     store
         .range(.., Some(Atom::from("test_remove")))
@@ -44,7 +43,7 @@ pub fn remove<S: RangeableStore>(store: &S) {
 
 pub fn iter<S: RangeableStore>(store: &S) {
     for i in 1..11u8 {
-        let entry = Entry::new_with_time(Duration::from_micros(i.into()), Atom::from("test_iter"), vec![i]);
+        let entry = Entry::new_with_timestamp(i.into(), Atom::from("test_iter"), vec![i]);
         store.push(Cow::Owned(entry)).unwrap();
     }
     let mut results: VecDeque<Result<Entry, Error>> = store.range(.., None).unwrap().iter().unwrap().collect();
@@ -53,7 +52,7 @@ pub fn iter<S: RangeableStore>(store: &S) {
         let result = results.pop_front().unwrap().unwrap();
         assert_eq!(
             result,
-            Entry::new_with_time(Duration::from_micros(i.into()), Atom::from("test_iter"), vec![i])
+            Entry::new_with_timestamp(i.into(), Atom::from("test_iter"), vec![i])
         );
     }
 }

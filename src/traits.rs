@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::ops::RangeBounds;
-use std::time::Duration;
 
 use super::{Entry, Error};
 
@@ -12,7 +11,7 @@ pub trait Store: Send + Sync {
 
 pub trait RangeableStore: Store {
     type Range: Range;
-    fn range<R: RangeBounds<Duration>>(&self, range: R, name: Option<Atom>) -> Result<Self::Range, Error>;
+    fn range<R: RangeBounds<i64>>(&self, range: R, name: Option<Atom>) -> Result<Self::Range, Error>;
 }
 
 pub trait Range {

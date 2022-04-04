@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::thread;
-use std::time::Duration;
 
 use crate::{Entry, Range, RangeableStore, Store};
 
@@ -35,7 +34,7 @@ macro_rules! bench_rangeable_store_impl {
 }
 
 pub fn push<S: Store>(b: &mut Bencher, store: &S) {
-    let entry = Entry::new_with_time(Duration::from_micros(1), Atom::from("bench_push"), vec![1, 2, 3]);
+    let entry = Entry::new_with_timestamp(1, Atom::from("bench_push"), vec![1, 2, 3]);
     b.iter(|| {
         store.push(Cow::Borrowed(&entry)).unwrap();
     });
@@ -49,11 +48,7 @@ pub fn push_parallel<S: Store + Clone + 'static>(b: &mut Bencher, store: &S) {
             threads.push(thread::spawn(move || {
                 for j in 1..1001 {
                     let idx = i * j;
-                    let entry = Entry::new_with_time(
-                        Duration::from_micros(idx),
-                        Atom::from("bench_push_parallel"),
-                        vec![1, 2, 3],
-                    );
+                    let entry = Entry::new_with_timestamp(idx, Atom::from("bench_push_parallel"), vec![1, 2, 3]);
                     store.push(Cow::Owned(entry)).unwrap();
                 }
             }));
@@ -66,7 +61,7 @@ pub fn push_parallel<S: Store + Clone + 'static>(b: &mut Bencher, store: &S) {
 
 pub fn iter<S: RangeableStore>(b: &mut Bencher, store: &S) {
     for i in 0..=255u8 {
-        let entry = Entry::new_with_time(Duration::from_micros(i.into()), Atom::from("bench_iter"), vec![i]);
+        let entry = Entry::new_with_timestamp(i.into(), Atom::from("bench_iter"), vec![i]);
         store.push(Cow::Owned(entry)).unwrap();
     }
     b.iter(|| {

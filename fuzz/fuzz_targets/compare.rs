@@ -1,10 +1,8 @@
 #![no_main]
 use std::borrow::Cow;
-use std::convert::TryInto;
 use std::ops;
-use std::time::Duration;
 
-use arbitrary::{Arbitrary, Error as ArbitraryError, Unstructured};
+use arbitrary::Arbitrary;
 use binlog::{Entry, MemoryStore, Range, RangeableStore, SqliteStore, Store};
 use libfuzzer_sys::fuzz_target;
 use string_cache::DefaultAtom as Atom;
@@ -43,39 +41,24 @@ macro_rules! cmp {
 
 #[derive(Arbitrary, Clone, Debug, PartialEq)]
 enum Op {
-    Push(ArbitraryMicros, String, Vec<u8>),
+    Push(i64, String, Vec<u8>),
     Len(ArbitraryMicrosRange, Option<String>),
     Remove(ArbitraryMicrosRange, Option<String>),
     Iter(ArbitraryMicrosRange, Option<String>),
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct ArbitraryMicros(i64);
-
-impl ArbitraryMicros {
-    fn to_duration(&self) -> Duration {
-        Duration::from_micros(self.0.try_into().unwrap())
-    }
-}
-
-impl<'a> Arbitrary<'a> for ArbitraryMicros {
-    fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self, ArbitraryError> {
-        Ok(ArbitraryMicros(u.int_in_range(0..=i64::max_value())?))
-    }
-}
-
 #[derive(Arbitrary, Clone, Debug, PartialEq)]
 enum ArbitraryMicrosBound {
-    Included(ArbitraryMicros),
-    Excluded(ArbitraryMicros),
+    Included(i64),
+    Excluded(i64),
     Unbounded,
 }
 
 impl ArbitraryMicrosBound {
-    fn to_duration_bound(&self) -> ops::Bound<Duration> {
+    fn to_bound(&self) -> ops::Bound<i64> {
         match self {
-            ArbitraryMicrosBound::Included(micros) => ops::Bound::Included(micros.to_duration()),
-            ArbitraryMicrosBound::Excluded(micros) => ops::Bound::Excluded(micros.to_duration()),
+            ArbitraryMicrosBound::Included(micros) => ops::Bound::Included(*micros),
+            ArbitraryMicrosBound::Excluded(micros) => ops::Bound::Excluded(*micros),
             ArbitraryMicrosBound::Unbounded => ops::Bound::Unbounded,
         }
     }
@@ -88,8 +71,8 @@ struct ArbitraryMicrosRange {
 }
 
 impl ArbitraryMicrosRange {
-    fn to_duration_range(&self) -> (ops::Bound<Duration>, ops::Bound<Duration>) {
-        (self.start_bound.to_duration_bound(), self.end_bound.to_duration_bound())
+    fn to_bounds(&self) -> (ops::Bound<i64>, ops::Bound<i64>) {
+        (self.start_bound.to_bound(), self.end_bound.to_bound())
     }
 }
 
@@ -100,7 +83,7 @@ fuzz_target!(|ops: Vec<Op>| {
     let sqlite_log = SqliteStore::new(file, None).unwrap();
 
     let get_ranges = |range: ArbitraryMicrosRange, name: Option<String>| {
-        let range = range.to_duration_range();
+        let range = range.to_bounds();
         let name = name.map(Atom::from);
         let memory_range = memory_log.range(range, name.clone());
         let sqlite_range = sqlite_log.range(range, name);
@@ -109,9 +92,8 @@ fuzz_target!(|ops: Vec<Op>| {
 
     for op in ops {
         match op {
-            Op::Push(time, name, value) => {
-                let time = time.to_duration();
-                let entry = Entry::new_with_time(time, Atom::from(name), value);
+            Op::Push(timestamp, name, value) => {
+                let entry = Entry::new_with_timestamp(timestamp, Atom::from(name), value);
                 let memory_value = memory_log.push(Cow::Borrowed(&entry));
                 let sqlite_value = sqlite_log.push(Cow::Owned(entry));
                 cmp!(memory_value, sqlite_value);

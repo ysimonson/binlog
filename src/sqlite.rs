@@ -3,10 +3,9 @@ use std::collections::VecDeque;
 use std::ops::{Bound, RangeBounds};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use std::vec::IntoIter as VecIter;
 
-use super::{utils, Entry, Error, Range, RangeableStore, Store};
+use super::{Entry, Error, Range, RangeableStore, Store};
 
 use r2d2::{Error as R2d2Error, Pool};
 use r2d2_sqlite::SqliteConnectionManager;
@@ -45,13 +44,13 @@ impl From<R2d2Error> for Error {
 }
 
 struct StatementBuilder {
-    start_bound: Bound<Duration>,
-    end_bound: Bound<Duration>,
+    start_bound: Bound<i64>,
+    end_bound: Bound<i64>,
     name: Option<Atom>,
 }
 
 impl StatementBuilder {
-    fn new<R: RangeBounds<Duration>>(range: R, name: Option<Atom>) -> StatementBuilder {
+    fn new<R: RangeBounds<i64>>(range: R, name: Option<Atom>) -> StatementBuilder {
         Self {
             start_bound: range.start_bound().cloned(),
             end_bound: range.end_bound().cloned(),
@@ -71,14 +70,14 @@ impl StatementBuilder {
         let mut clauses = Vec::new();
 
         match self.start_bound {
-            Bound::Included(s) => clauses.push(format!("ts >= {}", s.as_micros())),
-            Bound::Excluded(s) => clauses.push(format!("ts > {}", s.as_micros())),
+            Bound::Included(s) => clauses.push(format!("ts >= {}", s)),
+            Bound::Excluded(s) => clauses.push(format!("ts > {}", s)),
             Bound::Unbounded => {}
         }
 
         match self.end_bound {
-            Bound::Included(e) => clauses.push(format!("ts <= {}", e.as_micros())),
-            Bound::Excluded(e) => clauses.push(format!("ts < {}", e.as_micros())),
+            Bound::Included(e) => clauses.push(format!("ts <= {}", e)),
+            Bound::Excluded(e) => clauses.push(format!("ts < {}", e)),
             Bound::Unbounded => {}
         }
 
@@ -108,7 +107,11 @@ pub struct SqliteStore {
 
 impl SqliteStore {
     pub fn new_with_pool(pool: Pool<SqliteConnectionManager>, compression_level: Option<i32>) -> Result<Self, Error> {
-        pool.get()?.execute(SCHEMA, params![])?;
+        {
+            let conn = pool.get()?;
+            conn.pragma_update(None, "journal_mode", "wal2")?;
+            conn.execute(SCHEMA, params![])?;
+        }
         let compressor = Compressor::new(compression_level.unwrap_or(DEFAULT_COMPRESSION_LEVEL))?;
         Ok(Self {
             pool,
@@ -125,7 +128,6 @@ impl SqliteStore {
 
 impl Store for SqliteStore {
     fn push(&self, entry: Cow<Entry>) -> Result<(), Error> {
-        let ts: i64 = entry.time.as_micros().try_into().unwrap();
         let (blob_compressed, size) = if entry.value.len() >= MIN_SIZE_TO_COMPRESS {
             let mut compressor = self.compressor.lock().unwrap();
             (compressor.compress(&entry.value)?, entry.value.len())
@@ -140,7 +142,7 @@ impl Store for SqliteStore {
 
         let conn = self.pool.get()?;
         let mut stmt = conn.prepare_cached("insert into log (ts, name, size, value) values (?, ?, ?, ?)")?;
-        stmt.execute(params![ts, entry.name.as_ref(), size, blob_ref])?;
+        stmt.execute(params![entry.timestamp, entry.name.as_ref(), size, blob_ref])?;
         Ok(())
     }
 }
@@ -148,8 +150,7 @@ impl Store for SqliteStore {
 impl RangeableStore for SqliteStore {
     type Range = SqliteRange;
 
-    fn range<R: RangeBounds<Duration>>(&self, range: R, name: Option<Atom>) -> Result<Self::Range, Error> {
-        utils::check_bounds(range.start_bound(), range.end_bound())?;
+    fn range<R: RangeBounds<i64>>(&self, range: R, name: Option<Atom>) -> Result<Self::Range, Error> {
         Ok(SqliteRange {
             pool: self.pool.clone(),
             statement_builder: StatementBuilder::new(range, name),
@@ -210,7 +211,6 @@ impl SqliteRangeIterator {
         let mut added = 0;
         while let Some(row) = rows.next()? {
             let timestamp: i64 = row.get(0)?;
-            let time = Duration::from_micros(timestamp.try_into().unwrap());
             let name: String = row.get(1)?;
             let name: Atom = Atom::from(name);
             let size: usize = row.get(2)?;
@@ -218,7 +218,7 @@ impl SqliteRangeIterator {
             if size > 0 {
                 blob = decompressor.decompress(&blob, size)?;
             }
-            self.entries.push_back(Entry::new_with_time(time, name, blob));
+            self.entries.push_back(Entry::new_with_timestamp(timestamp, name, blob));
             added += 1;
         }
         if added < PAGINATION_LIMIT {
@@ -244,7 +244,7 @@ impl Iterator for SqliteRangeIterator {
 
 #[cfg(test)]
 mod tests {
-    use crate::{define_test, test_store_impl};
+    use crate::define_test;
     test_rangeable_store_impl!({
         use super::SqliteStore;
         use tempfile::NamedTempFile;
