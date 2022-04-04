@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::vec::IntoIter as VecIter;
 
-use super::{Entry, Error, Range, RangeableStore, Store};
+use super::{utils, Entry, Error, Range, RangeableStore, Store};
 
 use r2d2::{Error as R2d2Error, Pool};
 use r2d2_sqlite::SqliteConnectionManager;
@@ -151,6 +151,7 @@ impl RangeableStore for SqliteStore {
     type Range = SqliteRange;
 
     fn range<R: RangeBounds<i64>>(&self, range: R, name: Option<Atom>) -> Result<Self::Range, Error> {
+        utils::check_bounds(range.start_bound(), range.end_bound())?;
         Ok(SqliteRange {
             pool: self.pool.clone(),
             statement_builder: StatementBuilder::new(range, name),

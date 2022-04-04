@@ -4,7 +4,7 @@ use std::ops::{Bound, RangeBounds};
 use std::sync::{Arc, Mutex};
 use std::vec::IntoIter as VecIter;
 
-use super::{Entry, Error, Range, RangeableStore, Store};
+use super::{utils, Entry, Error, Range, RangeableStore, Store};
 
 use string_cache::DefaultAtom as Atom;
 
@@ -30,6 +30,7 @@ impl RangeableStore for MemoryStore {
     type Range = MemoryRange;
 
     fn range<R: RangeBounds<i64>>(&self, range: R, name: Option<Atom>) -> Result<Self::Range, Error> {
+        utils::check_bounds(range.start_bound(), range.end_bound())?;
         Ok(Self::Range {
             entries: self.entries.clone(),
             start_bound: range.start_bound().cloned(),
