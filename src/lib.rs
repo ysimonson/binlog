@@ -12,7 +12,9 @@ pub mod tests;
 
 #[cfg(feature = "python")]
 mod python;
-#[cfg(feature = "sqlite")]
+#[cfg(feature = "redis-store")]
+mod redis;
+#[cfg(feature = "sqlite-store")]
 mod sqlite;
 #[cfg(feature = "benches")]
 #[macro_use]
@@ -21,7 +23,9 @@ pub mod benches;
 pub use self::entry::Entry;
 pub use self::errors::Error;
 pub use self::memory::MemoryStore;
-pub use self::traits::{Range, RangeableStore, Store};
+pub use self::traits::{Range, RangeableStore, SubscribeableStore, Store};
 
-#[cfg(feature = "sqlite")]
+#[cfg(feature = "sqlite-store")]
 pub use self::sqlite::SqliteStore;
+#[cfg(feature = "redis-store")]
+pub use self::redis::RedisPubSubStore;

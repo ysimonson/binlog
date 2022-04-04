@@ -14,16 +14,25 @@ name = "binlog"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = ["sqlite"]
-sqlite = ["rusqlite", "zstd", "r2d2", "r2d2_sqlite", "tempfile"]
-python = ["pyo3", "sqlite"]
+default = ["sqlite-store"]
+redis-store = ["byteorder", "redis"]
+sqlite-store = ["rusqlite", "zstd", "r2d2", "r2d2_sqlite", "tempfile"]
+python = ["pyo3", "sqlite-store"]
 benches = []
 
 [dependencies]
 string_cache = "0.8.4"
+
+# python dependencies
+pyo3 = { version = "0.16.1", features = ["extension-module"], optional = true }
+
+# sqlite dependencies
 rusqlite = { version = "0.27.0", optional = true }
 r2d2 = { version = "0.8.9", optional = true }
 r2d2_sqlite = { version = "0.20.0", optional = true }
 tempfile = { version = "^3.3.0", optional = true }
 zstd = { version = "0.11.1", optional = true }
-pyo3 = { version = "0.16.1", features = ["extension-module"], optional = true }
+
+# redis dependencies
+byteorder = { version = "^1.4.3", optional = true }
+redis = { version = "0.21.5", optional = true }
