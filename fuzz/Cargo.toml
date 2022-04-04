@@ -16,7 +16,7 @@ tempfile = { version = "^3.3.0" }
 
 [dependencies.binlog]
 path = ".."
-features = ["sqlite"]
+features = ["sqlite-store"]
 
 # Prevent this from interfering with workspaces
 [workspace]
