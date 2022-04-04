@@ -1,8 +1,7 @@
 use std::borrow::Cow;
 use std::collections::VecDeque;
-use std::thread;
 
-use crate::{Entry, Error, Range, Store};
+use crate::{Entry, Error, Range, RangeableStore};
 
 use string_cache::Atom;
 
@@ -19,41 +18,15 @@ macro_rules! define_test {
 }
 
 #[macro_export]
-macro_rules! test_store_impl {
+macro_rules! test_rangeable_store_impl {
     ($code:expr) => {
-        define_test!(push, $code);
-        define_test!(push_parallel, $code);
         define_test!(remove, $code);
         define_test!(iter, $code);
     };
 }
 
-pub fn push<S: Store>(store: &S) {
-    let entry = Entry::new_with_timestamp(1, Atom::from("test_push"), vec![1, 2, 3]);
-    store.push(Cow::Owned(entry)).unwrap();
-    assert_eq!(store.range(.., None).unwrap().count().unwrap(), 1);
-}
-
-pub fn push_parallel<S: Store + Clone + 'static>(store: &S) {
-    let mut threads = Vec::default();
+pub fn remove<S: RangeableStore>(store: &S) {
     for i in 1..11 {
-        let store = store.clone();
-        threads.push(thread::spawn(move || {
-            for j in 1..11 {
-                let idx: u8 = (i * j).try_into().unwrap();
-                let entry = Entry::new_with_timestamp(idx.into(), Atom::from("test_push_parallel"), vec![idx]);
-                store.push(Cow::Owned(entry)).unwrap();
-            }
-        }));
-    }
-    for thread in threads.into_iter() {
-        thread.join().unwrap();
-    }
-    assert_eq!(store.range(.., None).unwrap().count().unwrap(), 100);
-}
-
-pub fn remove<S: Store>(store: &S) {
-    for i in 1..11u8 {
         let entry = Entry::new_with_timestamp(i.into(), Atom::from("test_remove"), vec![i]);
         store.push(Cow::Owned(entry)).unwrap();
     }
@@ -68,7 +41,7 @@ pub fn remove<S: Store>(store: &S) {
     assert_eq!(store.range(.., None).unwrap().count().unwrap(), 0);
 }
 
-pub fn iter<S: Store>(store: &S) {
+pub fn iter<S: RangeableStore>(store: &S) {
     for i in 1..11u8 {
         let entry = Entry::new_with_timestamp(i.into(), Atom::from("test_iter"), vec![i]);
         store.push(Cow::Owned(entry)).unwrap();

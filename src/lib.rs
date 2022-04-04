@@ -21,7 +21,7 @@ pub mod benches;
 pub use self::entry::Entry;
 pub use self::errors::Error;
 pub use self::memory::MemoryStore;
-pub use self::traits::{Range, Store};
+pub use self::traits::{Range, RangeableStore, Store};
 
 #[cfg(feature = "sqlite")]
 pub use self::sqlite::SqliteStore;

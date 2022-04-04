@@ -15,7 +15,7 @@ The underlying storage of logs are pluggable via the implementation of a couple 
 A small example:
 
 ```rust
-use binlog::{Entry, Error, Range, SqliteStore, Store};
+use binlog::{Entry, Error, Range, RangeableStore, SqliteStore, Store};
 use std::borrow::Cow;
 use string_cache::Atom;
 

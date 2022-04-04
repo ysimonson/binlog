@@ -4,7 +4,7 @@ use std::ops::{Bound, RangeBounds};
 use std::sync::{Arc, Mutex};
 use std::vec::IntoIter as VecIter;
 
-use super::{utils, Entry, Error, Range, Store};
+use super::{utils, Entry, Error, Range, RangeableStore, Store};
 
 use string_cache::DefaultAtom as Atom;
 
@@ -16,8 +16,6 @@ pub struct MemoryStore {
 }
 
 impl Store for MemoryStore {
-    type Range = MemoryRange;
-
     fn push(&self, entry: Cow<Entry>) -> Result<(), Error> {
         let mut entries = self.entries.lock().unwrap();
         entries
@@ -26,6 +24,10 @@ impl Store for MemoryStore {
             .push((entry.name.clone(), entry.value.clone()));
         Ok(())
     }
+}
+
+impl RangeableStore for MemoryStore {
+    type Range = MemoryRange;
 
     fn range<R: RangeBounds<i64>>(&self, range: R, name: Option<Atom>) -> Result<Self::Range, Error> {
         utils::check_bounds(range.start_bound(), range.end_bound())?;
@@ -101,8 +103,8 @@ impl Range for MemoryRange {
 
 #[cfg(test)]
 mod tests {
-    use crate::{define_test, test_store_impl};
-    test_store_impl!({
+    use crate::{define_test, test_rangeable_store_impl};
+    test_rangeable_store_impl!({
         use super::MemoryStore;
         MemoryStore::default()
     });
@@ -110,8 +112,12 @@ mod tests {
 
 #[cfg(feature = "benches")]
 mod benches {
-    use crate::{bench_store_impl, define_bench};
+    use crate::{bench_rangeable_store_impl, bench_store_impl, define_bench};
     bench_store_impl!({
+        use crate::MemoryStore;
+        MemoryStore::default()
+    });
+    bench_rangeable_store_impl!({
         use crate::MemoryStore;
         MemoryStore::default()
     });

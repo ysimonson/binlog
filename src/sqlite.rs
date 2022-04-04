@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::vec::IntoIter as VecIter;
 
-use super::{utils, Entry, Error, Range, Store};
+use super::{utils, Entry, Error, Range, RangeableStore, Store};
 
 use r2d2::{Error as R2d2Error, Pool};
 use r2d2_sqlite::SqliteConnectionManager;
@@ -127,8 +127,6 @@ impl SqliteStore {
 }
 
 impl Store for SqliteStore {
-    type Range = SqliteRange;
-
     fn push(&self, entry: Cow<Entry>) -> Result<(), Error> {
         let (blob_compressed, size) = if entry.value.len() >= MIN_SIZE_TO_COMPRESS {
             let mut compressor = self.compressor.lock().unwrap();
@@ -147,6 +145,10 @@ impl Store for SqliteStore {
         stmt.execute(params![entry.timestamp, entry.name.as_ref(), size, blob_ref])?;
         Ok(())
     }
+}
+
+impl RangeableStore for SqliteStore {
+    type Range = SqliteRange;
 
     fn range<R: RangeBounds<i64>>(&self, range: R, name: Option<Atom>) -> Result<Self::Range, Error> {
         utils::check_bounds(range.start_bound(), range.end_bound())?;
@@ -243,8 +245,8 @@ impl Iterator for SqliteRangeIterator {
 
 #[cfg(test)]
 mod tests {
-    use crate::{define_test, test_store_impl};
-    test_store_impl!({
+    use crate::define_test;
+    test_rangeable_store_impl!({
         use super::SqliteStore;
         use tempfile::NamedTempFile;
         let file = NamedTempFile::new().unwrap().into_temp_path();
@@ -254,8 +256,14 @@ mod tests {
 
 #[cfg(feature = "benches")]
 mod benches {
-    use crate::{bench_store_impl, define_bench};
+    use crate::{bench_rangeable_store_impl, bench_store_impl, define_bench};
     bench_store_impl!({
+        use super::SqliteStore;
+        use tempfile::NamedTempFile;
+        let file = NamedTempFile::new().unwrap().into_temp_path();
+        SqliteStore::new(file, None).unwrap()
+    });
+    bench_rangeable_store_impl!({
         use super::SqliteStore;
         use tempfile::NamedTempFile;
         let file = NamedTempFile::new().unwrap().into_temp_path();

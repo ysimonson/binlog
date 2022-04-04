@@ -1,4 +1,4 @@
-use binlog::{Entry, Error, Range, SqliteStore, Store};
+use binlog::{Entry, Error, Range, RangeableStore, SqliteStore, Store};
 use std::borrow::Cow;
 use string_cache::Atom;
 

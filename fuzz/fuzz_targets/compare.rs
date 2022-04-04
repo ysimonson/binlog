@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::ops;
 
 use arbitrary::Arbitrary;
-use binlog::{Entry, MemoryStore, Range, SqliteStore, Store};
+use binlog::{Entry, MemoryStore, Range, RangeableStore, SqliteStore, Store};
 use libfuzzer_sys::fuzz_target;
 use string_cache::DefaultAtom as Atom;
 use tempfile::NamedTempFile;

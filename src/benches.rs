@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::thread;
 
-use crate::{Entry, Range, Store};
+use crate::{Entry, Range, RangeableStore, Store};
 
 use string_cache::Atom;
 use test::Bencher;
@@ -23,6 +23,12 @@ macro_rules! bench_store_impl {
     ($code:expr) => {
         define_bench!(push, $code);
         define_bench!(push_parallel, $code);
+    };
+}
+
+#[macro_export]
+macro_rules! bench_rangeable_store_impl {
+    ($code:expr) => {
         define_bench!(iter, $code);
     };
 }
@@ -53,7 +59,7 @@ pub fn push_parallel<S: Store + Clone + 'static>(b: &mut Bencher, store: &S) {
     });
 }
 
-pub fn iter<S: Store>(b: &mut Bencher, store: &S) {
+pub fn iter<S: RangeableStore>(b: &mut Bencher, store: &S) {
     for i in 0..=255u8 {
         let entry = Entry::new_with_timestamp(i.into(), Atom::from("bench_iter"), vec![i]);
         store.push(Cow::Owned(entry)).unwrap();

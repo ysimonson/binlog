@@ -6,8 +6,11 @@ use super::{Entry, Error};
 use string_cache::DefaultAtom as Atom;
 
 pub trait Store: Send + Sync {
-    type Range: Range;
     fn push(&self, entry: Cow<Entry>) -> Result<(), Error>;
+}
+
+pub trait RangeableStore: Store {
+    type Range: Range;
     fn range<R: RangeBounds<i64>>(&self, range: R, name: Option<Atom>) -> Result<Self::Range, Error>;
 }
 
