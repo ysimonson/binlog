@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::io::{Cursor, Error as IoError, ErrorKind as IoErrorKind, Seek, SeekFrom};
+use std::io::{Cursor, Seek, SeekFrom};
 use std::sync::mpsc::{channel, Receiver};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -45,7 +45,7 @@ impl Store for RedisPubSubStore {
             let mut bytes = entry.value.clone();
             bytes.reserve_exact(8);
             let mut cursor = Cursor::new(bytes);
-            cursor.seek(SeekFrom::End(-8))?;
+            cursor.seek(SeekFrom::End(8))?;
             cursor.write_i64::<LittleEndian>(entry.timestamp)?;
             cursor.into_inner()
         };
@@ -123,26 +123,27 @@ impl Iterator for RedisPubSubIterator {
     fn next(&mut self) -> Option<Self::Item> {
         match self.rx.as_ref().unwrap().recv() {
             Ok(value) => Some(value),
-            Err(_) => Some(Err(Error::Io(IoError::new(
-                IoErrorKind::BrokenPipe,
-                "connection dropped",
-            )))),
+            Err(_) => None,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    // TODO
-}
-
-#[cfg(feature = "benches")]
-mod benches {
-    use crate::{bench_store_impl, define_bench};
-    bench_store_impl!({
-        use super::SqliteStore;
-        use tempfile::NamedTempFile;
-        let file = NamedTempFile::new().unwrap().into_temp_path();
-        SqliteStore::new(file, None).unwrap()
+    use crate::define_test;
+    test_subscribeable_store_impl!({
+        let connection_url = std::env::var("BINLOG_REDIS").expect("Must set the `BINLOG_REDIS` environment variable to run tests on the redis store");
+        super::RedisPubSubStore::new(connection_url).unwrap()
     });
 }
+
+// #[cfg(feature = "benches")]
+// mod benches {
+//     use crate::{bench_store_impl, define_bench};
+//     bench_store_impl!({
+//         use super::SqliteStore;
+//         use tempfile::NamedTempFile;
+//         let file = NamedTempFile::new().unwrap().into_temp_path();
+//         SqliteStore::new(file, None).unwrap()
+//     });
+// }

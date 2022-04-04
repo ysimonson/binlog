@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 use std::collections::VecDeque;
 
-use crate::{Entry, Error, Range, RangeableStore};
+use crate::{Entry, Error, Range, RangeableStore, Store, SubscribeableStore};
 
-use string_cache::Atom;
+use string_cache::DefaultAtom as Atom;
 
 /// Defines a unit test function.
 #[macro_export]
@@ -25,11 +25,35 @@ macro_rules! test_rangeable_store_impl {
     };
 }
 
-pub fn remove<S: RangeableStore>(store: &S) {
+#[macro_export]
+macro_rules! test_subscribeable_store_impl {
+    ($code:expr) => {
+        define_test!(pubsub, $code);
+    };
+}
+
+fn insert_sample_data<S: Store>(store: &S, name: Atom) -> Result<(), Error> {
     for i in 1..11 {
-        let entry = Entry::new_with_timestamp(i.into(), Atom::from("test_remove"), vec![i]);
-        store.push(Cow::Owned(entry)).unwrap();
+        let entry = Entry::new_with_timestamp(i.into(), name.clone(), vec![i]);
+        store.push(Cow::Owned(entry))?;
     }
+    Ok(())
+}
+
+fn check_sample_data(mut results: VecDeque<Result<Entry, Error>>, name: Atom) -> Result<(), Error> {
+    assert_eq!(results.len(), 10);
+    for i in 1..11u8 {
+        let result = results.pop_front().unwrap()?;
+        assert_eq!(
+            result,
+            Entry::new_with_timestamp(i.into(), name.clone(), vec![i])
+        );
+    }
+    Ok(())
+}
+
+pub fn remove<S: RangeableStore>(store: &S) {
+    insert_sample_data(store, Atom::from("test_remove")).unwrap();
     assert_eq!(store.range(.., None).unwrap().count().unwrap(), 10);
     store.range(2.., None).unwrap().remove().unwrap();
     assert_eq!(store.range(.., None).unwrap().count().unwrap(), 1);
@@ -42,17 +66,20 @@ pub fn remove<S: RangeableStore>(store: &S) {
 }
 
 pub fn iter<S: RangeableStore>(store: &S) {
-    for i in 1..11u8 {
-        let entry = Entry::new_with_timestamp(i.into(), Atom::from("test_iter"), vec![i]);
-        store.push(Cow::Owned(entry)).unwrap();
-    }
-    let mut results: VecDeque<Result<Entry, Error>> = store.range(.., None).unwrap().iter().unwrap().collect();
-    assert_eq!(results.len(), 10);
-    for i in 1..11u8 {
-        let result = results.pop_front().unwrap().unwrap();
-        assert_eq!(
-            result,
-            Entry::new_with_timestamp(i.into(), Atom::from("test_iter"), vec![i])
-        );
-    }
+    insert_sample_data(store, Atom::from("test_iter")).unwrap();
+    let results: VecDeque<Result<Entry, Error>> = store.range(.., None).unwrap().iter().unwrap().collect();
+    check_sample_data(results, Atom::from("test_iter")).unwrap();
+}
+
+pub fn pubsub<S: SubscribeableStore + Clone>(store: &S) {
+    let s1 = store.subscribe(None).unwrap();
+    let s2 = store.subscribe(Some(Atom::from("test_pubsub"))).unwrap();
+
+    insert_sample_data(store, Atom::from("test_pubsub")).unwrap();
+
+    let r1: VecDeque<Result<Entry, Error>> = s1.take(10).collect();
+    check_sample_data(r1, Atom::from("test_pubsub")).unwrap();
+
+    let r2: VecDeque<Result<Entry, Error>> = s2.take(10).collect();
+    check_sample_data(r2, Atom::from("test_pubsub")).unwrap();
 }
