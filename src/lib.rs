@@ -6,6 +6,7 @@ mod entry;
 mod errors;
 mod memory;
 mod traits;
+mod utils;
 #[macro_use]
 pub mod tests;
 
