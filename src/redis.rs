@@ -1,13 +1,15 @@
 use std::borrow::Cow;
-use std::io::{Cursor, Seek, SeekFrom, Error as IoError, ErrorKind as IoErrorKind};
-use std::sync::{Arc, Mutex};
+use std::io::{Cursor, Error as IoError, ErrorKind as IoErrorKind, Seek, SeekFrom};
 use std::sync::mpsc::{channel, Receiver};
+use std::sync::{Arc, Mutex};
 use std::thread;
 
-use super::{Entry, Error, SubscribeableStore, Store};
+use super::{Entry, Error, Store, SubscribeableStore};
 
 use byteorder::{ByteOrder, LittleEndian, WriteBytesExt};
-use redis::{Client, ConnectionLike, ControlFlow, RedisError, Connection, IntoConnectionInfo, Cmd, PubSubCommands, Msg};
+use redis::{
+    Client, Cmd, Connection, ConnectionLike, ControlFlow, IntoConnectionInfo, Msg, PubSubCommands, RedisError,
+};
 use string_cache::DefaultAtom as Atom;
 
 impl From<RedisError> for Error {
@@ -25,7 +27,10 @@ pub struct RedisPubSubStore {
 impl RedisPubSubStore {
     pub fn new_with_client(client: Client) -> Result<Self, Error> {
         let push_conn = client.get_connection()?;
-        Ok(Self { client, push_conn: Arc::new(Mutex::new(push_conn)) })
+        Ok(Self {
+            client,
+            push_conn: Arc::new(Mutex::new(push_conn)),
+        })
     }
 
     pub fn new<T: IntoConnectionInfo>(params: T) -> Result<Self, Error> {
@@ -96,7 +101,10 @@ impl RedisPubSubIterator {
             }
         });
 
-        Ok(RedisPubSubIterator { rx: Some(rx), listener_thread: Some(listener_thread) })
+        Ok(RedisPubSubIterator {
+            rx: Some(rx),
+            listener_thread: Some(listener_thread),
+        })
     }
 }
 
@@ -115,7 +123,10 @@ impl Iterator for RedisPubSubIterator {
     fn next(&mut self) -> Option<Self::Item> {
         match self.rx.as_ref().unwrap().recv() {
             Ok(value) => Some(value),
-            Err(_) => Some(Err(Error::Io(IoError::new(IoErrorKind::BrokenPipe, "connection dropped")))),
+            Err(_) => Some(Err(Error::Io(IoError::new(
+                IoErrorKind::BrokenPipe,
+                "connection dropped",
+            )))),
         }
     }
 }
@@ -127,7 +138,7 @@ mod tests {
 
 #[cfg(feature = "benches")]
 mod benches {
-    use crate::{bench_rangeable_store_impl, bench_store_impl, define_bench};
+    use crate::{bench_store_impl, define_bench};
     bench_store_impl!({
         use super::SqliteStore;
         use tempfile::NamedTempFile;

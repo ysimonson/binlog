@@ -23,9 +23,9 @@ pub mod benches;
 pub use self::entry::Entry;
 pub use self::errors::Error;
 pub use self::memory::MemoryStore;
-pub use self::traits::{Range, RangeableStore, SubscribeableStore, Store};
+pub use self::traits::{Range, RangeableStore, Store, SubscribeableStore};
 
-#[cfg(feature = "sqlite-store")]
-pub use self::sqlite::SqliteStore;
 #[cfg(feature = "redis-store")]
 pub use self::redis::RedisPubSubStore;
+#[cfg(feature = "sqlite-store")]
+pub use self::sqlite::SqliteStore;
