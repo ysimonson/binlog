@@ -44,10 +44,7 @@ fn check_sample_data(mut results: VecDeque<Result<Entry, Error>>, name: Atom) ->
     assert_eq!(results.len(), 10);
     for i in 1..11u8 {
         let result = results.pop_front().unwrap()?;
-        assert_eq!(
-            result,
-            Entry::new_with_timestamp(i.into(), name.clone(), vec![i])
-        );
+        assert_eq!(result, Entry::new_with_timestamp(i.into(), name.clone(), vec![i]));
     }
     Ok(())
 }
@@ -72,14 +69,10 @@ pub fn iter<S: RangeableStore>(store: &S) {
 }
 
 pub fn pubsub<S: SubscribeableStore + Clone>(store: &S) {
-    let s1 = store.subscribe(None).unwrap();
-    let s2 = store.subscribe(Some(Atom::from("test_pubsub"))).unwrap();
+    let subscriber = store.subscribe(Atom::from("test_pubsub")).unwrap();
 
     insert_sample_data(store, Atom::from("test_pubsub")).unwrap();
 
-    let r1: VecDeque<Result<Entry, Error>> = s1.take(10).collect();
-    check_sample_data(r1, Atom::from("test_pubsub")).unwrap();
-
-    let r2: VecDeque<Result<Entry, Error>> = s2.take(10).collect();
-    check_sample_data(r2, Atom::from("test_pubsub")).unwrap();
+    let results: VecDeque<Result<Entry, Error>> = subscriber.take(10).collect();
+    check_sample_data(results, Atom::from("test_pubsub")).unwrap();
 }

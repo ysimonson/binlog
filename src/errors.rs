@@ -7,6 +7,7 @@ use std::io::Error as IoError;
 pub enum Error {
     Database(Box<dyn StdError + Send + Sync>),
     Io(IoError),
+    BadTime,
     BadRange,
 }
 
@@ -29,6 +30,7 @@ impl fmt::Display for Error {
                 f,
                 "ranges cannot be reversed, or have exclusive bounds with equal durations"
             ),
+            Error::BadTime => write!(f, "timestamp is not acceptable in this store"),
         }
     }
 }

@@ -26,6 +26,6 @@ pub use self::memory::MemoryStore;
 pub use self::traits::{Range, RangeableStore, Store, SubscribeableStore};
 
 #[cfg(feature = "redis-store")]
-pub use self::redis::RedisPubSubStore;
+pub use self::redis::RedisStreamStore;
 #[cfg(feature = "sqlite-store")]
 pub use self::sqlite::SqliteStore;

@@ -1,16 +1,18 @@
 use std::borrow::Cow;
-use std::io::{Cursor, Seek, SeekFrom};
-use std::sync::mpsc::{channel, Receiver};
+use std::error::Error as StdError;
+use std::io::{Error as IoError, ErrorKind as IoErrorKind};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
 use super::{Entry, Error, Store, SubscribeableStore};
 
-use byteorder::{ByteOrder, LittleEndian, WriteBytesExt};
-use redis::{
-    Client, Cmd, Connection, ConnectionLike, ControlFlow, IntoConnectionInfo, Msg, PubSubCommands, RedisError,
-};
+use redis::{Client, Commands, Cmd, Connection, ConnectionLike, IntoConnectionInfo, RedisError, Value};
+use redis::streams::{StreamMaxlen, StreamReadOptions, StreamReadReply};
 use string_cache::DefaultAtom as Atom;
+
+static STREAM_READ_BLOCK_MS: usize = 1000;
 
 impl From<RedisError> for Error {
     fn from(err: RedisError) -> Self {
@@ -18,98 +20,84 @@ impl From<RedisError> for Error {
     }
 }
 
-#[derive(Clone)]
-pub struct RedisPubSubStore {
-    client: Client,
-    push_conn: Arc<Mutex<Connection>>,
+fn redis_channel(name: &Atom) -> String {
+    format!("binlog:stream:v0:{}", name)
 }
 
-impl RedisPubSubStore {
-    pub fn new_with_client(client: Client) -> Result<Self, Error> {
+fn invalid_data_err<E: Into<Box<dyn StdError + Send + Sync>>>(msg: E) -> Error {
+    IoError::new(IoErrorKind::InvalidData, msg).into()
+}
+
+#[derive(Clone)]
+pub struct RedisStreamStore {
+    client: Client,
+    push_conn: Arc<Mutex<Connection>>,
+    max_stream_len: StreamMaxlen,
+}
+
+impl RedisStreamStore {
+    pub fn new_with_client(client: Client, max_stream_len: usize) -> Result<Self, Error> {
         let push_conn = client.get_connection()?;
         Ok(Self {
             client,
             push_conn: Arc::new(Mutex::new(push_conn)),
+            max_stream_len: StreamMaxlen::Approx(max_stream_len),
         })
     }
 
-    pub fn new<T: IntoConnectionInfo>(params: T) -> Result<Self, Error> {
-        Self::new_with_client(Client::open(params)?)
+    pub fn new<T: IntoConnectionInfo>(params: T, max_stream_len: usize) -> Result<Self, Error> {
+        Self::new_with_client(Client::open(params)?, max_stream_len)
     }
 }
 
-impl Store for RedisPubSubStore {
+impl Store for RedisStreamStore {
     fn push(&self, entry: Cow<Entry>) -> Result<(), Error> {
-        let channel = format!("binlog:pubsub:v0:{}", entry.name);
-        let value = {
-            let mut bytes = entry.value.clone();
-            bytes.reserve_exact(8);
-            let mut cursor = Cursor::new(bytes);
-            cursor.seek(SeekFrom::End(8))?;
-            cursor.write_i64::<LittleEndian>(entry.timestamp)?;
-            cursor.into_inner()
-        };
-
+        if entry.timestamp < 0 {
+            return Err(Error::BadTime);
+        }
+        let channel = redis_channel(&entry.name);
+        let ts = format!("{}-1", entry.timestamp);
+        let payload = &[("", &entry.value)];
         let mut push_conn = self.push_conn.lock().unwrap();
-        push_conn.req_command(&Cmd::publish(channel, value))?;
+        let cmd = Cmd::xadd_maxlen(channel, self.max_stream_len, ts, payload);
+        push_conn.req_command(&cmd)?;
         Ok(())
     }
 }
 
-impl SubscribeableStore for RedisPubSubStore {
-    type Subscription = RedisPubSubIterator;
-    fn subscribe(&self, name: Option<Atom>) -> Result<Self::Subscription, Error> {
+impl SubscribeableStore for RedisStreamStore {
+    type Subscription = RedisStreamIterator;
+    fn subscribe(&self, name: Atom) -> Result<Self::Subscription, Error> {
         let conn = self.client.get_connection()?;
-        RedisPubSubIterator::new(conn, name)
+        RedisStreamIterator::new(conn, name)
     }
 }
 
-pub struct RedisPubSubIterator {
+pub struct RedisStreamIterator {
+    shutdown: Arc<AtomicBool>,
     rx: Option<Receiver<Result<Entry, Error>>>,
     listener_thread: Option<thread::JoinHandle<()>>,
 }
 
-impl RedisPubSubIterator {
-    fn new(mut conn: Connection, name: Option<Atom>) -> Result<Self, Error> {
+impl RedisStreamIterator {
+    fn new(conn: Connection, name: Atom) -> Result<Self, Error> {
         let (tx, rx) = channel::<Result<Entry, Error>>();
-
-        let listener_thread = thread::spawn(move || {
-            let cb = |message: Msg| -> ControlFlow<()> {
-                let channel = message.get_channel_name();
-                debug_assert!(channel.len() >= 17);
-                let name = &channel[17..];
-                let payload = message.get_payload_bytes();
-                debug_assert!(payload.len() >= 8);
-                let (value, micros_bytes) = payload.split_at(payload.len() - 8);
-                let timestamp = LittleEndian::read_i64(micros_bytes);
-                let entry = Entry::new_with_timestamp(timestamp, Atom::from(name), value.into());
-                if tx.send(Ok(entry)).is_ok() {
-                    ControlFlow::Continue
-                } else {
-                    ControlFlow::Break(())
-                }
-            };
-
-            let result = if let Some(name) = name {
-                conn.subscribe(format!("binlog:pubsub:v0:{}", name), cb)
-            } else {
-                conn.psubscribe("binlog:pubsub:v0:*", cb)
-            };
-
-            if let Err(err) = result {
-                tx.send(Err(err.into())).ok();
-            }
-        });
-
-        Ok(RedisPubSubIterator {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let listener_thread = {
+            let shutdown = shutdown.clone();
+            thread::spawn(|| stream_listener(conn, name, tx, shutdown))
+        };
+        Ok(RedisStreamIterator {
+            shutdown,
             rx: Some(rx),
             listener_thread: Some(listener_thread),
         })
     }
 }
 
-impl Drop for RedisPubSubIterator {
+impl Drop for RedisStreamIterator {
     fn drop(&mut self) {
+        self.shutdown.store(true, Ordering::Relaxed);
         let rx = self.rx.take().unwrap();
         drop(rx);
         let listener_thread = self.listener_thread.take().unwrap();
@@ -117,7 +105,7 @@ impl Drop for RedisPubSubIterator {
     }
 }
 
-impl Iterator for RedisPubSubIterator {
+impl Iterator for RedisStreamIterator {
     type Item = Result<Entry, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -128,12 +116,65 @@ impl Iterator for RedisPubSubIterator {
     }
 }
 
+fn stream_listener(mut conn: Connection, name: Atom, tx: Sender<Result<Entry, Error>>, shutdown: Arc<AtomicBool>) {
+    let channels = vec![redis_channel(&name)];
+    let mut last_id = "$".to_string();
+    let opts = StreamReadOptions::default().block(STREAM_READ_BLOCK_MS);
+    loop {
+        let reply: StreamReadReply = match conn.xread_options(&channels, &[&last_id], &opts) {
+            Ok(reply) => reply,
+            Err(err) => {
+                if tx.send(Err(err.into())).is_err() || shutdown.load(Ordering::Relaxed) {
+                    return;
+                } else {
+                    continue;
+                }
+            }
+        };
+
+        if reply.keys.len() == 0 && shutdown.load(Ordering::Relaxed) {
+            return;
+        }
+
+        for stream_key in reply.keys {
+            for stream_id in stream_key.ids {
+                let timestamp_str = stream_id.id.split("-").next().unwrap();
+                let timestamp = match timestamp_str.parse::<i64>() {
+                    Ok(value) => value,
+                    Err(err) => {
+                        let err = invalid_data_err(format!("unexpected key format received from redis: {}", err));
+                        if tx.send(Err(err.into())).is_err() {
+                            return;
+                        } else {
+                            break;
+                        }
+                    }
+                };
+
+                for (_, value) in stream_id.map {
+                    let result = if let Value::Data(bytes) = value {
+                        Ok(Entry::new_with_timestamp(timestamp, name.clone(), bytes))
+                    } else {
+                        Err(invalid_data_err("unexpected data format received from redis"))
+                    };
+                    if tx.send(result).is_err() {
+                        return;
+                    }
+                }
+
+                last_id = stream_id.id;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::define_test;
     test_subscribeable_store_impl!({
-        let connection_url = std::env::var("BINLOG_REDIS").expect("Must set the `BINLOG_REDIS` environment variable to run tests on the redis store");
-        super::RedisPubSubStore::new(connection_url).unwrap()
+        let connection_url = std::env::var("BINLOG_REDIS")
+            .expect("Must set the `BINLOG_REDIS` environment variable to run tests on the redis store");
+        super::RedisStreamStore::new(connection_url, 10).unwrap()
     });
 }
 

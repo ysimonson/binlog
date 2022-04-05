@@ -23,5 +23,5 @@ pub trait Range {
 
 pub trait SubscribeableStore: Store {
     type Subscription: Iterator<Item = Result<Entry, Error>>;
-    fn subscribe(&self, name: Option<Atom>) -> Result<Self::Subscription, Error>;
+    fn subscribe(&self, name: Atom) -> Result<Self::Subscription, Error>;
 }
