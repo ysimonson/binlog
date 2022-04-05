@@ -20,5 +20,5 @@ fi
 pip install virtualenv
 make venv
 source venv/bin/activate
-maturin develop --cargo-extra-args="--features=python"
+maturin develop --cargo-extra-args="--features=redis-store,sqlite-store,python"
 pytest --color=yes python_tests/

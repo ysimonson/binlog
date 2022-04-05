@@ -7,12 +7,12 @@ venv:
 	. venv/bin/activate && pip install maturin pytest
 
 bench:
-	cargo +nightly bench --features=benches,redis-store
+	cargo +nightly bench --features=benches,redis-store,sqlite-store
 
 test:
-	cargo test --all-features
+	cargo test --features=redis-store,sqlite-store
 	make venv
-	. venv/bin/activate && maturin develop --cargo-extra-args="--all-features"
+	. venv/bin/activate && maturin develop --cargo-extra-args="--features=redis-store,sqlite-store,python"
 	. venv/bin/activate && pytest python_tests/
 
 fuzz:
