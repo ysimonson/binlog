@@ -40,18 +40,6 @@ fn insert_sample_data<S: Store>(store: &S, name: Atom) -> Result<(), Error> {
     Ok(())
 }
 
-fn check_sample_data(mut results: VecDeque<Result<Entry, Error>>, name: Atom) -> Result<(), Error> {
-    assert_eq!(results.len(), 10);
-    for i in 1..11u8 {
-        let result = results.pop_front().unwrap()?;
-        assert_eq!(
-            result,
-            Entry::new_with_timestamp(i.into(), name.clone(), vec![i])
-        );
-    }
-    Ok(())
-}
-
 pub fn remove<S: RangeableStore>(store: &S) {
     insert_sample_data(store, Atom::from("test_remove")).unwrap();
     assert_eq!(store.range(.., None).unwrap().count().unwrap(), 10);
@@ -67,19 +55,30 @@ pub fn remove<S: RangeableStore>(store: &S) {
 
 pub fn iter<S: RangeableStore>(store: &S) {
     insert_sample_data(store, Atom::from("test_iter")).unwrap();
-    let results: VecDeque<Result<Entry, Error>> = store.range(.., None).unwrap().iter().unwrap().collect();
-    check_sample_data(results, Atom::from("test_iter")).unwrap();
+    let mut results: VecDeque<Result<Entry, Error>> = store.range(.., None).unwrap().iter().unwrap().collect();
+    assert_eq!(results.len(), 10);
+    for i in 1..11u8 {
+        let result = results.pop_front().unwrap().unwrap();
+        assert_eq!(
+            result,
+            Entry::new_with_timestamp(i.into(), Atom::from("test_iter"), vec![i])
+        );
+    }
 }
 
 pub fn pubsub<S: SubscribeableStore + Clone>(store: &S) {
-    let s1 = store.subscribe(None).unwrap();
-    let s2 = store.subscribe(Some(Atom::from("test_pubsub"))).unwrap();
+    let mut s1 = store.subscribe(None).unwrap();
+    let mut s2 = store.subscribe(Some(Atom::from("test_pubsub"))).unwrap();
 
     insert_sample_data(store, Atom::from("test_pubsub")).unwrap();
 
-    let r1: VecDeque<Result<Entry, Error>> = s1.take(10).collect();
-    check_sample_data(r1, Atom::from("test_pubsub")).unwrap();
-
-    let r2: VecDeque<Result<Entry, Error>> = s2.take(10).collect();
-    check_sample_data(r2, Atom::from("test_pubsub")).unwrap();
+    // Pubsub is best-effort. It's possible some of the messages were dropped,
+    // so just check that at least one message made it through.
+    for v in vec![s1.next(), s2.next()].into_iter() {
+        let v = v.unwrap().unwrap();
+        assert!(v.timestamp >= 1);
+        assert!(v.timestamp <= 10);
+        assert_eq!(v.name, Atom::from("test_pubsub"));
+        assert!(!v.value.is_empty());
+    }
 }
