@@ -1,18 +1,35 @@
 use std::borrow::Cow;
 use std::error::Error as StdError;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
 use super::{Entry, Error, Store, SubscribeableStore};
 
-use redis::{Client, Commands, Cmd, Connection, ConnectionLike, IntoConnectionInfo, RedisError, Value};
+use byteorder::{ByteOrder, LittleEndian};
 use redis::streams::{StreamMaxlen, StreamReadOptions, StreamReadReply};
+use redis::{Client, Cmd, Commands, Connection, ConnectionLike, IntoConnectionInfo, RedisError, Value};
 use string_cache::DefaultAtom as Atom;
 
 static STREAM_READ_BLOCK_MS: usize = 1000;
+
+macro_rules! get_field_from_stream_map {
+    ($tx:expr, $stream_id:expr, $field_name:expr) => {
+        match $stream_id.map.get($field_name) {
+            Some(Value::Data(bytes)) => bytes,
+            _ => {
+                let err = invalid_data_err("unexpected data format received from redis");
+                if $tx.send(Err(err)).is_err() {
+                    return;
+                } else {
+                    break;
+                }
+            }
+        }
+    };
+}
 
 impl From<RedisError> for Error {
     fn from(err: RedisError) -> Self {
@@ -53,9 +70,13 @@ impl RedisStreamStore {
 impl Store for RedisStreamStore {
     fn push(&self, entry: Cow<Entry>) -> Result<(), Error> {
         let channel = redis_channel(&entry.name);
-        let payload = &[("", &entry.value)];
+        let mut timestamp_bytes = [0; 8];
+        LittleEndian::write_i64(&mut timestamp_bytes, entry.timestamp);
+        let payload = &[
+            ("timestamp", timestamp_bytes.as_slice()),
+            ("value", entry.value.as_slice()),
+        ];
         let mut push_conn = self.push_conn.lock().unwrap();
-        // TODO: respect entry.timestamp?
         let cmd = Cmd::xadd_maxlen(channel, self.max_stream_len, "*", payload);
         push_conn.req_command(&cmd)?;
         Ok(())
@@ -135,39 +156,13 @@ fn stream_listener(mut conn: Connection, name: Atom, tx: Sender<Result<Entry, Er
 
         for stream_key in reply.keys {
             for stream_id in stream_key.ids {
-                let timestamp_str = stream_id.id.split("-").next().unwrap();
-                let timestamp = match timestamp_str.parse::<i64>() {
-                    Ok(value) => {
-                        if let Some(value) = value.checked_mul(1000) {
-                            value
-                        } else {
-                            let err = invalid_data_err("unexpected key format received from redis: value too large");
-                            if tx.send(Err(err.into())).is_err() {
-                                return;
-                            } else {
-                                break;
-                            }
-                        }
-                    },
-                    Err(err) => {
-                        let err = invalid_data_err(format!("unexpected key format received from redis: {}", err));
-                        if tx.send(Err(err.into())).is_err() {
-                            return;
-                        } else {
-                            break;
-                        }
-                    }
-                };
+                let timestamp_bytes = get_field_from_stream_map!(tx, stream_id, "timestamp");
+                let timestamp = LittleEndian::read_i64(timestamp_bytes);
+                let value = get_field_from_stream_map!(tx, stream_id, "value");
+                let entry = Entry::new_with_timestamp(timestamp, name.clone(), value.clone());
 
-                for (_, value) in stream_id.map {
-                    let result = if let Value::Data(bytes) = value {
-                        Ok(Entry::new_with_timestamp(timestamp, name.clone(), bytes))
-                    } else {
-                        Err(invalid_data_err("unexpected data format received from redis"))
-                    };
-                    if tx.send(result).is_err() {
-                        return;
-                    }
+                if tx.send(Ok(entry)).is_err() {
+                    return;
                 }
 
                 last_id = stream_id.id;
@@ -192,6 +187,6 @@ mod benches {
     bench_store_impl!({
         let connection_url = std::env::var("BINLOG_REDIS")
             .expect("Must set the `BINLOG_REDIS` environment variable to run tests on the redis store");
-        super::RedisPubSubStore::new(connection_url, 100).unwrap()
+        super::RedisStreamStore::new(connection_url, 100).unwrap()
     });
 }
