@@ -7,7 +7,7 @@ venv:
 	. venv/bin/activate && pip install maturin pytest
 
 bench:
-	cargo +nightly bench --features=benches
+	cargo +nightly bench --features=benches,redis-store
 
 test:
 	cargo test --all-features

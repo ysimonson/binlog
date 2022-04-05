@@ -138,13 +138,12 @@ mod tests {
     });
 }
 
-// #[cfg(feature = "benches")]
-// mod benches {
-//     use crate::{bench_store_impl, define_bench};
-//     bench_store_impl!({
-//         use super::SqliteStore;
-//         use tempfile::NamedTempFile;
-//         let file = NamedTempFile::new().unwrap().into_temp_path();
-//         SqliteStore::new(file, None).unwrap()
-//     });
-// }
+#[cfg(feature = "benches")]
+mod benches {
+    use crate::{bench_store_impl, define_bench};
+    bench_store_impl!({
+        let connection_url = std::env::var("BINLOG_REDIS")
+            .expect("Must set the `BINLOG_REDIS` environment variable to run tests on the redis store");
+        super::RedisPubSubStore::new(connection_url).unwrap()
+    });
+}
