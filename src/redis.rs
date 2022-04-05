@@ -132,7 +132,8 @@ impl Iterator for RedisPubSubIterator {
 mod tests {
     use crate::define_test;
     test_subscribeable_store_impl!({
-        let connection_url = std::env::var("BINLOG_REDIS").expect("Must set the `BINLOG_REDIS` environment variable to run tests on the redis store");
+        let connection_url = std::env::var("BINLOG_REDIS")
+            .expect("Must set the `BINLOG_REDIS` environment variable to run tests on the redis store");
         super::RedisPubSubStore::new(connection_url).unwrap()
     });
 }
