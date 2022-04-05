@@ -52,14 +52,11 @@ impl RedisStreamStore {
 
 impl Store for RedisStreamStore {
     fn push(&self, entry: Cow<Entry>) -> Result<(), Error> {
-        if entry.timestamp < 0 {
-            return Err(Error::BadTime);
-        }
         let channel = redis_channel(&entry.name);
-        let ts = format!("{}-1", entry.timestamp);
         let payload = &[("", &entry.value)];
         let mut push_conn = self.push_conn.lock().unwrap();
-        let cmd = Cmd::xadd_maxlen(channel, self.max_stream_len, ts, payload);
+        // TODO: respect entry.timestamp?
+        let cmd = Cmd::xadd_maxlen(channel, self.max_stream_len, "*", payload);
         push_conn.req_command(&cmd)?;
         Ok(())
     }
@@ -140,7 +137,18 @@ fn stream_listener(mut conn: Connection, name: Atom, tx: Sender<Result<Entry, Er
             for stream_id in stream_key.ids {
                 let timestamp_str = stream_id.id.split("-").next().unwrap();
                 let timestamp = match timestamp_str.parse::<i64>() {
-                    Ok(value) => value,
+                    Ok(value) => {
+                        if let Some(value) = value.checked_mul(1000) {
+                            value
+                        } else {
+                            let err = invalid_data_err("unexpected key format received from redis: value too large");
+                            if tx.send(Err(err.into())).is_err() {
+                                return;
+                            } else {
+                                break;
+                            }
+                        }
+                    },
                     Err(err) => {
                         let err = invalid_data_err(format!("unexpected key format received from redis: {}", err));
                         if tx.send(Err(err.into())).is_err() {
@@ -174,17 +182,16 @@ mod tests {
     test_subscribeable_store_impl!({
         let connection_url = std::env::var("BINLOG_REDIS")
             .expect("Must set the `BINLOG_REDIS` environment variable to run tests on the redis store");
-        super::RedisStreamStore::new(connection_url, 10).unwrap()
+        super::RedisStreamStore::new(connection_url, 100).unwrap()
     });
 }
 
-// #[cfg(feature = "benches")]
-// mod benches {
-//     use crate::{bench_store_impl, define_bench};
-//     bench_store_impl!({
-//         use super::SqliteStore;
-//         use tempfile::NamedTempFile;
-//         let file = NamedTempFile::new().unwrap().into_temp_path();
-//         SqliteStore::new(file, None).unwrap()
-//     });
-// }
+#[cfg(feature = "benches")]
+mod benches {
+    use crate::{bench_store_impl, define_bench};
+    bench_store_impl!({
+        let connection_url = std::env::var("BINLOG_REDIS")
+            .expect("Must set the `BINLOG_REDIS` environment variable to run tests on the redis store");
+        super::RedisPubSubStore::new(connection_url, 100).unwrap()
+    });
+}
