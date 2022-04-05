@@ -175,9 +175,7 @@ fn stream_listener(mut conn: Connection, name: Atom, tx: Sender<Result<Entry, Er
 mod tests {
     use crate::define_test;
     test_subscribeable_store_impl!({
-        let connection_url = std::env::var("BINLOG_REDIS")
-            .expect("Must set the `BINLOG_REDIS` environment variable to run tests on the redis store");
-        super::RedisStreamStore::new(connection_url, 100).unwrap()
+        super::RedisStreamStore::new("redis://localhost:6379", 100).unwrap()
     });
 }
 
@@ -185,8 +183,6 @@ mod tests {
 mod benches {
     use crate::{bench_store_impl, define_bench};
     bench_store_impl!({
-        let connection_url = std::env::var("BINLOG_REDIS")
-            .expect("Must set the `BINLOG_REDIS` environment variable to run tests on the redis store");
-        super::RedisStreamStore::new(connection_url, 100).unwrap()
+        super::RedisStreamStore::new("redis://localhost:6379", 100).unwrap()
     });
 }
