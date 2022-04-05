@@ -150,7 +150,7 @@ fn stream_listener(mut conn: Connection, name: Atom, tx: Sender<Result<Entry, Er
             }
         };
 
-        if reply.keys.len() == 0 && shutdown.load(Ordering::Relaxed) {
+        if reply.keys.is_empty() && shutdown.load(Ordering::Relaxed) {
             return;
         }
 
