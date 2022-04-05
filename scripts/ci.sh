@@ -5,7 +5,7 @@ set -ex
 rust_variant=$1
 os=$2
 
-cargo test --all-features
+cargo test --features=redis-store,sqlite-store
 
 if [ "$os" == "ubuntu-latest" ]; then
     if [ "$rust_variant" == "stable" ]; then
