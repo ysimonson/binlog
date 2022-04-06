@@ -33,7 +33,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-        - { rust: stable, os: macOS-latest }
+        # TODO: re-enable if there's a way to enable services on macOS
+        #- { rust: stable, os: macOS-latest }
         - { rust: stable, os: ubuntu-latest }
         - { rust: nightly, os: ubuntu-latest }
     steps:
