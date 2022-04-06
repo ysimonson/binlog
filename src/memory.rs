@@ -1,27 +1,45 @@
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::{Bound, RangeBounds};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::vec::IntoIter as VecIter;
 
-use super::{utils, Entry, Error, Range, RangeableStore, Store};
+use super::{utils, Entry, Error, Range, RangeableStore, Store, SubscribeableStore};
 
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use string_cache::DefaultAtom as Atom;
 
-type EntriesStore = BTreeMap<i64, Vec<(Atom, Vec<u8>)>>;
+#[derive(Clone, Default)]
+struct MemoryStoreInternal {
+    entries: BTreeMap<i64, Vec<(Atom, Vec<u8>)>>,
+    subscribers: HashMap<Atom, Vec<Weak<MemoryStreamIteratorInternal>>>,
+}
 
 #[derive(Clone, Default)]
-pub struct MemoryStore {
-    entries: Arc<Mutex<EntriesStore>>,
-}
+pub struct MemoryStore(Arc<Mutex<MemoryStoreInternal>>);
 
 impl Store for MemoryStore {
     fn push(&self, entry: Cow<Entry>) -> Result<(), Error> {
-        let mut entries = self.entries.lock().unwrap();
-        entries
+        let mut internal = self.0.lock().unwrap();
+
+        internal
+            .entries
             .entry(entry.timestamp)
             .or_insert_with(Vec::default)
             .push((entry.name.clone(), entry.value.clone()));
+
+        if let Some(subscribers) = internal.subscribers.get_mut(&entry.name) {
+            let entry = entry.into_owned();
+            let mut new_subscribers = Vec::<Weak<MemoryStreamIteratorInternal>>::default();
+            for subscriber in subscribers.drain(..) {
+                if let Some(subscriber) = Weak::upgrade(&subscriber) {
+                    subscriber.notify(entry.clone());
+                    new_subscribers.push(Arc::downgrade(&subscriber));
+                }
+            }
+            *subscribers = new_subscribers;
+        }
+
         Ok(())
     }
 }
@@ -32,7 +50,7 @@ impl RangeableStore for MemoryStore {
     fn range<R: RangeBounds<i64>>(&self, range: R, name: Option<Atom>) -> Result<Self::Range, Error> {
         utils::check_bounds(range.start_bound(), range.end_bound())?;
         Ok(Self::Range {
-            entries: self.entries.clone(),
+            internal: self.0.clone(),
             start_bound: range.start_bound().cloned(),
             end_bound: range.end_bound().cloned(),
             name,
@@ -41,7 +59,7 @@ impl RangeableStore for MemoryStore {
 }
 
 pub struct MemoryRange {
-    entries: Arc<Mutex<EntriesStore>>,
+    internal: Arc<Mutex<MemoryStoreInternal>>,
     start_bound: Bound<i64>,
     end_bound: Bound<i64>,
     name: Option<Atom>,
@@ -52,24 +70,24 @@ impl Range for MemoryRange {
 
     fn count(&self) -> Result<u64, Error> {
         let mut count: u64 = 0;
-        let entries = self.entries.lock().unwrap();
-        for (_, entries) in entries.range((self.start_bound, self.end_bound)) {
+        let internal = self.internal.lock().unwrap();
+        for (_, range) in internal.entries.range((self.start_bound, self.end_bound)) {
             if let Some(ref name) = self.name {
-                count += entries.iter().filter(|e| &e.0 == name).count() as u64;
+                count += range.iter().filter(|e| &e.0 == name).count() as u64;
             } else {
-                count += entries.len() as u64;
+                count += range.len() as u64;
             }
         }
         Ok(count)
     }
 
     fn remove(self) -> Result<(), Error> {
-        let mut entries = self.entries.lock().unwrap();
-        for (_, entries) in entries.range_mut((self.start_bound, self.end_bound)) {
+        let mut internal = self.internal.lock().unwrap();
+        for (_, range) in internal.entries.range_mut((self.start_bound, self.end_bound)) {
             if let Some(ref name) = self.name {
-                *entries = entries.drain(..).filter(|e| &e.0 != name).collect();
+                *range = range.drain(..).filter(|e| &e.0 != name).collect();
             } else {
-                *entries = Vec::default();
+                *range = Vec::default();
             }
         }
         Ok(())
@@ -77,10 +95,10 @@ impl Range for MemoryRange {
 
     fn iter(self) -> Result<Self::Iter, Error> {
         let mut returnable_entries = Vec::default();
-        let entries = self.entries.lock().unwrap();
-        for (timestamp, entries) in entries.range((self.start_bound, self.end_bound)) {
+        let internal = self.internal.lock().unwrap();
+        for (timestamp, range) in internal.entries.range((self.start_bound, self.end_bound)) {
             if let Some(ref name) = self.name {
-                for entry in entries.iter().filter(|e| &e.0 == name) {
+                for entry in range.iter().filter(|e| &e.0 == name) {
                     returnable_entries.push(Ok(Entry::new_with_timestamp(
                         *timestamp,
                         entry.0.clone(),
@@ -88,7 +106,7 @@ impl Range for MemoryRange {
                     )));
                 }
             } else {
-                for entry in entries.iter() {
+                for entry in range.iter() {
                     returnable_entries.push(Ok(Entry::new_with_timestamp(
                         *timestamp,
                         entry.0.clone(),
@@ -101,10 +119,57 @@ impl Range for MemoryRange {
     }
 }
 
+impl SubscribeableStore for MemoryStore {
+    type Subscription = MemoryStreamIterator;
+    fn subscribe(&self, name: Atom) -> Result<Self::Subscription, Error> {
+        let (tx, rx) = unbounded();
+        let iterator_internal = Arc::new(MemoryStreamIteratorInternal { tx });
+        let mut internal = self.0.lock().unwrap();
+        internal
+            .subscribers
+            .entry(name)
+            .or_insert_with(Vec::default)
+            .push(Arc::downgrade(&iterator_internal));
+        Ok(MemoryStreamIterator {
+            _internal: iterator_internal,
+            rx,
+        })
+    }
+}
+
+struct MemoryStreamIteratorInternal {
+    tx: Sender<Entry>,
+}
+
+impl MemoryStreamIteratorInternal {
+    fn notify(&self, entry: Entry) {
+        self.tx.send(entry).unwrap();
+    }
+}
+
+#[derive(Clone)]
+pub struct MemoryStreamIterator {
+    _internal: Arc<MemoryStreamIteratorInternal>,
+    rx: Receiver<Entry>,
+}
+
+impl Iterator for MemoryStreamIterator {
+    type Item = Result<Entry, Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let value = self.rx.recv().unwrap();
+        Some(Ok(value))
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{define_test, test_rangeable_store_impl};
+    use crate::{define_test, test_rangeable_store_impl, test_subscribeable_store_impl};
     test_rangeable_store_impl!({
+        use super::MemoryStore;
+        MemoryStore::default()
+    });
+    test_subscribeable_store_impl!({
         use super::MemoryStore;
         MemoryStore::default()
     });

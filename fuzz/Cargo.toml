@@ -16,14 +16,20 @@ tempfile = { version = "^3.3.0" }
 
 [dependencies.binlog]
 path = ".."
-features = ["sqlite"]
+features = ["redis-store", "sqlite-store"]
 
 # Prevent this from interfering with workspaces
 [workspace]
 members = ["."]
 
 [[bin]]
-name = "compare"
-path = "fuzz_targets/compare.rs"
+name = "redis"
+path = "fuzz_targets/redis.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "sqlite"
+path = "fuzz_targets/sqlite.rs"
 test = false
 doc = false

@@ -20,3 +20,8 @@ pub trait Range {
     fn remove(self) -> Result<(), Error>;
     fn iter(self) -> Result<Self::Iter, Error>;
 }
+
+pub trait SubscribeableStore: Store {
+    type Subscription: Iterator<Item = Result<Entry, Error>>;
+    fn subscribe(&self, name: Atom) -> Result<Self::Subscription, Error>;
+}
