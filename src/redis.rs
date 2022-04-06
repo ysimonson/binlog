@@ -54,16 +54,16 @@ pub struct RedisStreamStore {
 }
 
 impl RedisStreamStore {
-    pub fn new_with_client(client: Client, max_stream_len: usize) -> Result<Self, Error> {
-        Ok(Self {
+    pub fn new_with_client(client: Client, max_stream_len: usize) -> Self {
+        Self {
             client,
             push_conns: Arc::new(Mutex::new(Vec::default())),
             max_stream_len: StreamMaxlen::Approx(max_stream_len),
-        })
+        }
     }
 
     pub fn new<T: IntoConnectionInfo>(params: T, max_stream_len: usize) -> Result<Self, Error> {
-        Self::new_with_client(Client::open(params)?, max_stream_len)
+        Ok(Self::new_with_client(Client::open(params)?, max_stream_len))
     }
 }
 
