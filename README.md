@@ -6,7 +6,7 @@
 
 A rust library for creating and managing logs of arbitrary binary data.
 
-The underlying storage of logs are pluggable via the implementation of a couple of [traits](https://github.com/ysimonson/binlog/blob/main/src/traits.rs). Binlog includes built-in implementations via sqlite storage, and in-memory-only. Additionally, python bindings allow you to use (a subset of) binlog from python.
+The underlying storage of logs are pluggable via a few [traits](https://github.com/ysimonson/binlog/blob/main/src/traits.rs). Binlog includes built-in implementations via sqlite, redis, and in-memory-only. Additionally, python bindings allow you to use (a subset of) binlog from python.
 
 ## Usage
 
@@ -65,6 +65,22 @@ from binlog import binlog
 store = binlog.SqliteStore("example.db")
 store.push(binlog.Entry(1, "pytest_push", [1, 2, 3]))
 ```
+
+## Stores
+
+Stores implement the [`Store` trait, and zero or more optional extensions](https://github.com/ysimonson/binlog/blob/main/src/traits.rs) depending on their supported functionality. A few stores implementations are built-in to `binlog`:
+
+### In-memory-only
+
+The in-memory-only store has no means of persistence, but offers the full log functionality. This is also used internally for fuzzing other implementations against.
+
+### Redis
+
+The redis implementation is enableable via the `redis-store` feature. Under the hood, it uses redis streams. It supports subscriptions, but not ranges.
+
+### Sqlite
+
+The sqlite implementation is enableable via the `sqlite-store` feature. It supports ranges, but not subscriptions.
 
 ## Testing
 
