@@ -17,8 +17,11 @@ fn map_result<T>(res: Result<T, Error>) -> PyResult<T> {
 #[pyclass]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
+    #[pyo3(get, set)]
     pub timestamp: i64,
+    #[pyo3(get, set)]
     pub name: String,
+    #[pyo3(get, set)]
     pub value: Vec<u8>,
 }
 
