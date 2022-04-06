@@ -4,7 +4,7 @@
 [![crates.io](https://img.shields.io/crates/v/binlog.svg)](https://crates.io/crates/binlog)
 [![API docs](https://docs.rs/binlog/badge.svg)](https://docs.rs/binlog)
 
-A rust library for creating and managing logs of arbitrary binary data. Presently it's used to collect sensor data on a robot. But should be generally helpful in cases where you need to store timeseries data, in a nearly (but not strictly) append-only fashion.
+A rust library for creating and managing logs of arbitrary binary data. Presently it's used to collect sensor data. But it should generally be helpful in cases where you need to store timeseries data, in a nearly (but not strictly) append-only fashion.
 
 The underlying storage of logs are pluggable via a few [traits](https://github.com/ysimonson/binlog/blob/main/src/traits.rs). Binlog includes built-in implementations via sqlite, redis, and in-memory-only. Additionally, python bindings allow you to use (a subset of) binlog from python.
 
