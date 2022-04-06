@@ -10,8 +10,6 @@ def test_pubsub():
     time.sleep(0.1) # give enough time for the thread to start up
     store.push(entry)
     sub_entry = next(sub)
-    print(dir(entry))
-    print(dir(sub_entry))
     assert entry.timestamp == sub_entry.timestamp
     assert entry.name == sub_entry.name
     assert entry.value == sub_entry.value
