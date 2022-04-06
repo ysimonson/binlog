@@ -91,6 +91,7 @@ impl SubscribeableStore for RedisStreamStore {
     }
 }
 
+// TODO: switch to crossbeam-channel
 pub struct RedisStreamIterator {
     shutdown: Arc<AtomicBool>,
     rx: Option<Receiver<Result<Entry, Error>>>,
@@ -174,15 +175,11 @@ fn stream_listener(mut conn: Connection, name: Atom, tx: Sender<Result<Entry, Er
 #[cfg(test)]
 mod tests {
     use crate::define_test;
-    test_subscribeable_store_impl!({
-        super::RedisStreamStore::new("redis://localhost:6379", 100).unwrap()
-    });
+    test_subscribeable_store_impl!({ super::RedisStreamStore::new("redis://localhost:6379", 100).unwrap() });
 }
 
 #[cfg(feature = "benches")]
 mod benches {
     use crate::{bench_store_impl, define_bench};
-    bench_store_impl!({
-        super::RedisStreamStore::new("redis://localhost:6379", 100).unwrap()
-    });
+    bench_store_impl!({ super::RedisStreamStore::new("redis://localhost:6379", 100).unwrap() });
 }
