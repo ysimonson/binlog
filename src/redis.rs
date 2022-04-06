@@ -2,13 +2,13 @@ use std::borrow::Cow;
 use std::error::Error as StdError;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
 use super::{Entry, Error, Store, SubscribeableStore};
 
 use byteorder::{ByteOrder, LittleEndian};
+use crossbeam_channel::{unbounded, Sender, Receiver};
 use redis::streams::{StreamMaxlen, StreamReadOptions, StreamReadReply};
 use redis::{Client, Cmd, Commands, Connection, ConnectionLike, IntoConnectionInfo, RedisError, Value};
 use string_cache::DefaultAtom as Atom;
@@ -91,7 +91,6 @@ impl SubscribeableStore for RedisStreamStore {
     }
 }
 
-// TODO: switch to crossbeam-channel
 pub struct RedisStreamIterator {
     shutdown: Arc<AtomicBool>,
     rx: Option<Receiver<Result<Entry, Error>>>,
@@ -100,7 +99,7 @@ pub struct RedisStreamIterator {
 
 impl RedisStreamIterator {
     fn new(conn: Connection, name: Atom) -> Result<Self, Error> {
-        let (tx, rx) = channel::<Result<Entry, Error>>();
+        let (tx, rx) = unbounded::<Result<Entry, Error>>();
         let shutdown = Arc::new(AtomicBool::new(false));
         let listener_thread = {
             let shutdown = shutdown.clone();
