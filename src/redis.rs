@@ -8,7 +8,7 @@ use std::thread;
 use super::{Entry, Error, Store, SubscribeableStore};
 
 use byteorder::{ByteOrder, LittleEndian};
-use crossbeam_channel::{unbounded, Sender, Receiver};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use redis::streams::{StreamMaxlen, StreamReadOptions, StreamReadReply};
 use redis::{Client, Cmd, Commands, Connection, ConnectionLike, IntoConnectionInfo, RedisError, Value};
 use string_cache::DefaultAtom as Atom;
