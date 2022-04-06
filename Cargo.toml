@@ -17,7 +17,7 @@ crate-type = ["cdylib", "rlib"]
 default = []
 redis-store = ["redis", "byteorder"]
 sqlite-store = ["rusqlite", "zstd", "r2d2", "r2d2_sqlite", "tempfile"]
-python = ["pyo3", "sqlite-store"]
+python = ["pyo3", "redis-store", "sqlite-store"]
 benches = []
 
 [dependencies]
