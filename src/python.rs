@@ -61,9 +61,29 @@ impl SqliteStore {
     }
 }
 
+#[pyclass]
+pub struct RedisStreamStore {
+    store: crate::RedisStreamStore,
+}
+
+#[pymethods]
+impl RedisStreamStore {
+    #[new]
+    pub fn new(connection_url: String, max_stream_len: usize) -> PyResult<Self> {
+        Ok(Self {
+            store: map_binlog_result(crate::RedisStreamStore::new(connection_url, max_stream_len))?,
+        })
+    }
+
+    pub fn push(&self, entry: Entry) -> PyResult<()> {
+        map_binlog_result(self.store.push(Cow::Owned(entry.into())))
+    }
+}
+
 #[pymodule]
 fn binlog(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<Entry>()?;
+    m.add_class::<RedisStreamStore>()?;
     m.add_class::<SqliteStore>()?;
     Ok(())
 }
