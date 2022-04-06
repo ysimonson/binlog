@@ -14,6 +14,7 @@ use redis::{Client, Cmd, Commands, Connection, ConnectionLike, IntoConnectionInf
 use string_cache::DefaultAtom as Atom;
 
 static STREAM_READ_BLOCK_MS: usize = 1000;
+static PUSH_CONNS_MAX_COUNT: usize = 4;
 
 macro_rules! get_field_from_stream_map {
     ($tx:expr, $stream_id:expr, $field_name:expr) => {
@@ -48,16 +49,15 @@ fn invalid_data_err<E: Into<Box<dyn StdError + Send + Sync>>>(msg: E) -> Error {
 #[derive(Clone)]
 pub struct RedisStreamStore {
     client: Client,
-    push_conn: Arc<Mutex<Connection>>,
+    push_conns: Arc<Mutex<Vec<Connection>>>,
     max_stream_len: StreamMaxlen,
 }
 
 impl RedisStreamStore {
     pub fn new_with_client(client: Client, max_stream_len: usize) -> Result<Self, Error> {
-        let push_conn = client.get_connection()?;
         Ok(Self {
             client,
-            push_conn: Arc::new(Mutex::new(push_conn)),
+            push_conns: Arc::new(Mutex::new(Vec::default())),
             max_stream_len: StreamMaxlen::Approx(max_stream_len),
         })
     }
@@ -76,9 +76,24 @@ impl Store for RedisStreamStore {
             ("timestamp", timestamp_bytes.as_slice()),
             ("value", entry.value.as_slice()),
         ];
-        let mut push_conn = self.push_conn.lock().unwrap();
         let cmd = Cmd::xadd_maxlen(channel, self.max_stream_len, "*", payload);
+
+        let mut push_conn = {
+            let mut push_conns = self.push_conns.lock().unwrap();
+            if let Some(conn) = push_conns.pop() {
+                conn
+            } else {
+                self.client.get_connection()?
+            }
+        };
+
         push_conn.req_command(&cmd)?;
+
+        let mut push_conns = self.push_conns.lock().unwrap();
+        if push_conns.len() < PUSH_CONNS_MAX_COUNT {
+            push_conns.push(push_conn);
+        }
+
         Ok(())
     }
 }
