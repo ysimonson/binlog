@@ -43,16 +43,18 @@ impl From<R2d2Error> for Error {
 }
 
 fn entry_from_row<S: Into<Atom>>(
-    decompressor: &Decompressor<'_>,
+    decompressor: &mut Decompressor<'_>,
     timestamp: i64,
     name: S,
     size: usize,
     blob: Vec<u8>,
 ) -> Result<Entry, Error> {
     if size > 0 {
-        blob = decompressor.decompress(&blob, size)?;
+        let blob_decompressed = decompressor.decompress(&blob, size)?;
+        Ok(Entry::new_with_timestamp(timestamp, name.into(), blob_decompressed))
+    } else {
+        Ok(Entry::new_with_timestamp(timestamp, name.into(), blob))
     }
-    Ok(Entry::new_with_timestamp(timestamp, name.into(), blob))
 }
 
 struct StatementBuilder {
@@ -173,8 +175,8 @@ impl Store for SqliteStore {
             .optional()?;
 
         if let Some((timestamp, size, blob)) = row {
-            let decompressor = self.decompressor.lock().unwrap();
-            let entry = entry_from_row(&decompressor, timestamp, name, size, blob)?;
+            let mut decompressor = self.decompressor.lock().unwrap();
+            let entry = entry_from_row(&mut decompressor, timestamp, name, size, blob)?;
             Ok(Some(entry))
         } else {
             Ok(None)
@@ -248,9 +250,9 @@ impl SqliteRangeIterator {
             let timestamp: i64 = row.get(0)?;
             let name: String = row.get(1)?;
             let size: usize = row.get(2)?;
-            let mut blob: Vec<u8> = row.get(3)?;
+            let blob: Vec<u8> = row.get(3)?;
             self.entries
-                .push_back(entry_from_row(&decompressor, timestamp, name, size, blob)?);
+                .push_back(entry_from_row(&mut decompressor, timestamp, name, size, blob)?);
             added += 1;
         }
         if added < PAGINATION_LIMIT {

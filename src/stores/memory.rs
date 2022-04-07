@@ -50,11 +50,7 @@ impl Store for MemoryStore {
                 continue;
             }
             if let Some(value) = map_values.last() {
-                return Ok(Some(Entry::new_with_timestamp(
-                    *map_timestamp,
-                    name.clone(),
-                    value.clone(),
-                )));
+                return Ok(Some(Entry::new_with_timestamp(*map_timestamp, name, value.clone())));
             }
         }
 

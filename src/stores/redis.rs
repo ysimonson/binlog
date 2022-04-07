@@ -9,28 +9,12 @@ use crate::{Entry, Error, Store, SubscribeableStore};
 
 use byteorder::{ByteOrder, LittleEndian};
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use redis::streams::{StreamMaxlen, StreamReadOptions, StreamReadReply};
+use redis::streams::{StreamId, StreamMaxlen, StreamRangeReply, StreamReadOptions, StreamReadReply};
 use redis::{Client, Cmd, Commands, Connection, ConnectionLike, IntoConnectionInfo, RedisError, Value};
 use string_cache::DefaultAtom as Atom;
 
 static STREAM_READ_BLOCK_MS: usize = 1000;
 static CONN_POOL_MAX_COUNT: usize = 4;
-
-macro_rules! get_field_from_stream_map {
-    ($tx:expr, $stream_id:expr, $field_name:expr) => {
-        match $stream_id.map.get($field_name) {
-            Some(Value::Data(bytes)) => bytes,
-            _ => {
-                let err = invalid_data_err("unexpected data format received from redis");
-                if $tx.send(Err(err)).is_err() {
-                    return;
-                } else {
-                    break;
-                }
-            }
-        }
-    };
-}
 
 impl From<RedisError> for Error {
     fn from(err: RedisError) -> Self {
@@ -44,6 +28,22 @@ fn redis_channel(name: &Atom) -> String {
 
 fn invalid_data_err<E: Into<Box<dyn StdError + Send + Sync>>>(msg: E) -> Error {
     IoError::new(IoErrorKind::InvalidData, msg).into()
+}
+
+fn unexpected_data_format() -> Error {
+    invalid_data_err("unexpected data format received from redis")
+}
+
+fn entry_from_stream_id(stream_id: &StreamId, name: Atom) -> Result<Entry, Error> {
+    let (timestamp, value) = match (stream_id.map.get("timestamp"), stream_id.map.get("value")) {
+        (Some(Value::Data(timestamp_bytes)), Some(Value::Data(value_bytes))) => {
+            (LittleEndian::read_i64(timestamp_bytes), value_bytes)
+        }
+        _ => {
+            return Err(unexpected_data_format());
+        }
+    };
+    Ok(Entry::new_with_timestamp(timestamp, name, value.clone()))
 }
 
 #[derive(Clone)]
@@ -67,7 +67,9 @@ impl RedisStreamStore {
     }
 
     fn with_connection<T, F>(&self, f: F) -> Result<T, Error>
-    where F: Fn(&Connection) -> Result<T, Error> {
+    where
+        F: FnOnce(&mut Connection) -> Result<T, Error>,
+    {
         let mut conn = {
             let mut conn_pool = self.conn_pool.lock().unwrap();
             if let Some(conn) = conn_pool.pop() {
@@ -79,7 +81,7 @@ impl RedisStreamStore {
 
         // It's possible that the connection is in a bad state, so don't return
         // it to the pool if an error occurred.
-        let result = f(&conn)?;
+        let result = f(&mut conn)?;
 
         let mut conn_pool = self.conn_pool.lock().unwrap();
         if conn_pool.len() < CONN_POOL_MAX_COUNT {
@@ -95,16 +97,39 @@ impl Store for RedisStreamStore {
         let channel = redis_channel(&entry.name);
         let mut timestamp_bytes = [0; 8];
         LittleEndian::write_i64(&mut timestamp_bytes, entry.timestamp);
-        let payload = &[
-            ("timestamp", timestamp_bytes.as_slice()),
-            ("value", entry.value.as_slice()),
-        ];
-        let cmd = Cmd::xadd_maxlen(channel, self.max_stream_len, "*", payload);
+        let cmd = Cmd::xadd_maxlen(
+            channel,
+            self.max_stream_len,
+            "*",
+            &[
+                ("timestamp", timestamp_bytes.as_slice()),
+                ("value", entry.value.as_slice()),
+            ],
+        );
 
         self.with_connection(|conn| {
             conn.req_command(&cmd)?;
             Ok(())
         })
+    }
+
+    fn latest(&self, name: Atom) -> Result<Option<Entry>, Error> {
+        let channel = redis_channel(&name);
+        let reply: StreamRangeReply = self.with_connection(move |conn| {
+            let value = conn.xrevrange_count(channel, "+", "-", 1i8)?;
+            Ok(value)
+        })?;
+
+        debug_assert!(reply.ids.len() <= 1);
+
+        if reply.ids.is_empty() {
+            Ok(None)
+        } else {
+            match entry_from_stream_id(&reply.ids[0], name) {
+                Ok(entry) => Ok(Some(entry)),
+                Err(err) => Err(err),
+            }
+        }
     }
 }
 
@@ -181,15 +206,9 @@ fn stream_listener(mut conn: Connection, name: Atom, tx: Sender<Result<Entry, Er
 
         for stream_key in reply.keys {
             for stream_id in stream_key.ids {
-                let timestamp_bytes = get_field_from_stream_map!(tx, stream_id, "timestamp");
-                let timestamp = LittleEndian::read_i64(timestamp_bytes);
-                let value = get_field_from_stream_map!(tx, stream_id, "value");
-                let entry = Entry::new_with_timestamp(timestamp, name.clone(), value.clone());
-
-                if tx.send(Ok(entry)).is_err() {
+                if tx.send(entry_from_stream_id(&stream_id, name.clone())).is_err() {
                     return;
                 }
-
                 last_id = stream_id.id;
             }
         }
