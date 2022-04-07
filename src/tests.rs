@@ -18,6 +18,13 @@ macro_rules! define_test {
 }
 
 #[macro_export]
+macro_rules! test_store_impl {
+    ($code:expr) => {
+        define_test!(latest, $code);
+    };
+}
+
+#[macro_export]
 macro_rules! test_rangeable_store_impl {
     ($code:expr) => {
         define_test!(remove, $code);
@@ -75,4 +82,14 @@ pub fn pubsub<S: SubscribeableStore + Clone>(store: &S) {
     insert_sample_data(store, Atom::from("test_pubsub")).unwrap();
     let results: VecDeque<Result<Entry, Error>> = subscriber.take(10).collect();
     check_sample_data(results, Atom::from("test_pubsub")).unwrap();
+}
+
+pub fn latest<S: Store + Clone>(store: &S) {
+    let name = Atom::from("test_latest");
+    assert_eq!(store.latest(name.clone()).unwrap(), None);
+    insert_sample_data(store, name.clone()).unwrap();
+    assert_eq!(
+        store.latest(name.clone()).unwrap(),
+        Some(Entry::new_with_timestamp(10, name, vec![10]))
+    );
 }
