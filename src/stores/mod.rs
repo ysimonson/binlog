@@ -3,3 +3,4 @@ pub mod memory;
 pub mod redis;
 #[cfg(feature = "sqlite-store")]
 pub mod sqlite;
+pub mod traits;

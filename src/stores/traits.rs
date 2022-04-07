@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::ops::RangeBounds;
 
-use super::{Entry, Error};
+use crate::{Entry, Error};
 
 use string_cache::DefaultAtom as Atom;
 

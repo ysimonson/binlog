@@ -5,7 +5,6 @@ extern crate test;
 mod entry;
 mod errors;
 mod stores;
-mod traits;
 mod utils;
 #[macro_use]
 pub mod tests;
@@ -19,7 +18,7 @@ pub mod benches;
 pub use self::entry::Entry;
 pub use self::errors::Error;
 pub use self::stores::memory::{MemoryRange, MemoryStore, MemoryStreamIterator};
-pub use self::traits::{Range, RangeableStore, Store, SubscribeableStore};
+pub use self::stores::traits::{Range, RangeableStore, Store, SubscribeableStore};
 
 #[cfg(feature = "redis-store")]
 pub use self::stores::redis::{RedisStreamIterator, RedisStreamStore};
