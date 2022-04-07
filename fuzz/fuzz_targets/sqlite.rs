@@ -45,6 +45,7 @@ enum Op {
     Len(ArbitraryMicrosRange, Option<String>),
     Remove(ArbitraryMicrosRange, Option<String>),
     Iter(ArbitraryMicrosRange, Option<String>),
+    Latest(String),
 }
 
 #[derive(Arbitrary, Clone, Debug, PartialEq)]
@@ -129,6 +130,12 @@ fuzz_target!(|ops: Vec<Op>| {
                         }
                     }
                 }
+            }
+            Op::Latest(name) => {
+                let name = Atom::from(name);
+                let memory_value = memory_log.latest(name.clone());
+                let sqlite_value = sqlite_log.latest(name);
+                cmp!(memory_value, sqlite_value);
             }
         }
     }

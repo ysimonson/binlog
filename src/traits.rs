@@ -7,6 +7,7 @@ use string_cache::DefaultAtom as Atom;
 
 pub trait Store: Send + Sync {
     fn push(&self, entry: Cow<Entry>) -> Result<(), Error>;
+    fn latest(&self, name: Atom) -> Result<Option<Entry>, Error>;
 }
 
 pub trait RangeableStore: Store {
