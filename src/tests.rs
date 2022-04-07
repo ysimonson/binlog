@@ -6,6 +6,7 @@ use crate::{Entry, Error, Range, RangeableStore, Store, SubscribeableStore};
 use string_cache::DefaultAtom as Atom;
 
 /// Defines a unit test function.
+#[doc(hidden)]
 #[macro_export]
 macro_rules! define_test {
     ($name:ident, $store_constructor:expr) => {
@@ -17,6 +18,7 @@ macro_rules! define_test {
     };
 }
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! test_store_impl {
     ($code:expr) => {
@@ -32,6 +34,7 @@ macro_rules! test_rangeable_store_impl {
     };
 }
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! test_subscribeable_store_impl {
     ($code:expr) => {
