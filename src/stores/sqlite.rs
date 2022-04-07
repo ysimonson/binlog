@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::ops::{Bound, RangeBounds};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
 use std::vec::IntoIter as VecIter;
 
 use crate::{utils, Entry, Error, Range, RangeableStore, Store};
@@ -11,7 +10,7 @@ use r2d2::{Error as R2d2Error, Pool};
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{params, params_from_iter, Error as SqliteError, OptionalExtension, ParamsFromIter};
 use string_cache::DefaultAtom as Atom;
-use zstd::bulk::{Compressor, Decompressor};
+use zstd::bulk::{compress, Decompressor};
 
 static SCHEMA: &str = r#"
 create table if not exists log (
@@ -116,10 +115,7 @@ impl StatementBuilder {
 #[derive(Clone)]
 pub struct SqliteStore {
     pool: Pool<SqliteConnectionManager>,
-    // TODO: investigate perf impact of locking these vs building
-    // compressors/decompressors on-the-fly
-    compressor: Arc<Mutex<Compressor<'static>>>,
-    decompressor: Arc<Mutex<Decompressor<'static>>>,
+    compression_level: i32,
 }
 
 impl SqliteStore {
@@ -129,12 +125,9 @@ impl SqliteStore {
             conn.pragma_update(None, "journal_mode", "wal2")?;
             conn.execute(SCHEMA, params![])?;
         }
-        let compressor = Compressor::new(compression_level.unwrap_or(DEFAULT_COMPRESSION_LEVEL))?;
-        let decompressor = Decompressor::new()?;
         Ok(Self {
             pool,
-            compressor: Arc::new(Mutex::new(compressor)),
-            decompressor: Arc::new(Mutex::new(decompressor)),
+            compression_level: compression_level.unwrap_or(DEFAULT_COMPRESSION_LEVEL)
         })
     }
 
@@ -148,8 +141,7 @@ impl SqliteStore {
 impl Store for SqliteStore {
     fn push(&self, entry: Cow<Entry>) -> Result<(), Error> {
         let (blob_compressed, size) = if entry.value.len() >= MIN_SIZE_TO_COMPRESS {
-            let mut compressor = self.compressor.lock().unwrap();
-            (compressor.compress(&entry.value)?, entry.value.len())
+            (compress(&entry.value, self.compression_level)?, entry.value.len())
         } else {
             (Vec::default(), 0)
         };
@@ -175,7 +167,7 @@ impl Store for SqliteStore {
             .optional()?;
 
         if let Some((timestamp, size, blob)) = row {
-            let mut decompressor = self.decompressor.lock().unwrap();
+            let mut decompressor = Decompressor::new()?;
             let entry = entry_from_row(&mut decompressor, timestamp, name, size, blob)?;
             Ok(Some(entry))
         } else {
