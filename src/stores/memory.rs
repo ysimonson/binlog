@@ -4,7 +4,7 @@ use std::ops::{Bound, RangeBounds};
 use std::sync::{Arc, Mutex, Weak};
 use std::vec::IntoIter as VecIter;
 
-use super::{utils, Entry, Error, Range, RangeableStore, Store, SubscribeableStore};
+use crate::{utils, Entry, Error, Range, RangeableStore, Store, SubscribeableStore};
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use string_cache::DefaultAtom as Atom;

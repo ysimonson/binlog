@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::vec::IntoIter as VecIter;
 
-use super::{utils, Entry, Error, Range, RangeableStore, Store};
+use crate::{utils, Entry, Error, Range, RangeableStore, Store};
 
 use r2d2::{Error as R2d2Error, Pool};
 use r2d2_sqlite::SqliteConnectionManager;
@@ -245,7 +245,7 @@ impl Iterator for SqliteRangeIterator {
 
 #[cfg(test)]
 mod tests {
-    use crate::define_test;
+    use crate::{define_test, test_rangeable_store_impl};
     test_rangeable_store_impl!({
         use super::SqliteStore;
         use tempfile::NamedTempFile;
