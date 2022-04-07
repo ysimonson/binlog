@@ -9,8 +9,7 @@ use crate::{utils, Entry, Error, Range, RangeableStore, Store};
 
 use r2d2::{Error as R2d2Error, Pool};
 use r2d2_sqlite::SqliteConnectionManager;
-use rusqlite::Error as SqliteError;
-use rusqlite::{params, params_from_iter, ParamsFromIter};
+use rusqlite::{params, params_from_iter, Error as SqliteError, OptionalExtension, ParamsFromIter};
 use string_cache::DefaultAtom as Atom;
 use zstd::bulk::{Compressor, Decompressor};
 
@@ -41,6 +40,19 @@ impl From<R2d2Error> for Error {
     fn from(err: R2d2Error) -> Self {
         Error::Database(Box::new(err))
     }
+}
+
+fn entry_from_row<S: Into<Atom>>(
+    decompressor: &Decompressor<'_>,
+    timestamp: i64,
+    name: S,
+    size: usize,
+    blob: Vec<u8>,
+) -> Result<Entry, Error> {
+    if size > 0 {
+        blob = decompressor.decompress(&blob, size)?;
+    }
+    Ok(Entry::new_with_timestamp(timestamp, name.into(), blob))
 }
 
 struct StatementBuilder {
@@ -102,7 +114,10 @@ impl StatementBuilder {
 #[derive(Clone)]
 pub struct SqliteStore {
     pool: Pool<SqliteConnectionManager>,
+    // TODO: investigate perf impact of locking these vs building
+    // compressors/decompressors on-the-fly
     compressor: Arc<Mutex<Compressor<'static>>>,
+    decompressor: Arc<Mutex<Decompressor<'static>>>,
 }
 
 impl SqliteStore {
@@ -113,9 +128,11 @@ impl SqliteStore {
             conn.execute(SCHEMA, params![])?;
         }
         let compressor = Compressor::new(compression_level.unwrap_or(DEFAULT_COMPRESSION_LEVEL))?;
+        let decompressor = Decompressor::new()?;
         Ok(Self {
             pool,
             compressor: Arc::new(Mutex::new(compressor)),
+            decompressor: Arc::new(Mutex::new(decompressor)),
         })
     }
 
@@ -144,6 +161,24 @@ impl Store for SqliteStore {
         let mut stmt = conn.prepare_cached("insert into log (ts, name, size, value) values (?, ?, ?, ?)")?;
         stmt.execute(params![entry.timestamp, entry.name.as_ref(), size, blob_ref])?;
         Ok(())
+    }
+
+    fn latest(&self, name: Atom) -> Result<Option<Entry>, Error> {
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare_cached("select ts, size, value from log where name = ? order by ts desc")?;
+        let row = stmt
+            .query_row(params![name.as_ref()], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .optional()?;
+
+        if let Some((timestamp, size, blob)) = row {
+            let decompressor = self.decompressor.lock().unwrap();
+            let entry = entry_from_row(&decompressor, timestamp, name, size, blob)?;
+            Ok(Some(entry))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -191,7 +226,6 @@ impl Range for SqliteRange {
         })
     }
 }
-
 pub struct SqliteRangeIterator {
     pool: Pool<SqliteConnectionManager>,
     statement_builder: StatementBuilder,
@@ -213,13 +247,10 @@ impl SqliteRangeIterator {
         while let Some(row) = rows.next()? {
             let timestamp: i64 = row.get(0)?;
             let name: String = row.get(1)?;
-            let name: Atom = Atom::from(name);
             let size: usize = row.get(2)?;
             let mut blob: Vec<u8> = row.get(3)?;
-            if size > 0 {
-                blob = decompressor.decompress(&blob, size)?;
-            }
-            self.entries.push_back(Entry::new_with_timestamp(timestamp, name, blob));
+            self.entries
+                .push_back(entry_from_row(&decompressor, timestamp, name, size, blob)?);
             added += 1;
         }
         if added < PAGINATION_LIMIT {

@@ -42,6 +42,24 @@ impl Store for MemoryStore {
 
         Ok(())
     }
+
+    fn latest(&self, name: Atom) -> Result<Option<Entry>, Error> {
+        let internal = self.0.lock().unwrap();
+        for ((map_timestamp, map_name), map_values) in internal.entries.iter().rev() {
+            if map_name != &name {
+                continue;
+            }
+            if let Some(value) = map_values.last() {
+                return Ok(Some(Entry::new_with_timestamp(
+                    *map_timestamp,
+                    name.clone(),
+                    value.clone(),
+                )));
+            }
+        }
+
+        Ok(None)
+    }
 }
 
 impl RangeableStore for MemoryStore {
@@ -100,7 +118,7 @@ impl Range for MemoryRange {
         for ((timestamp, name), values) in internal.entries.range(self.full_start_bound()..) {
             if self.done_iterating_in_range(*timestamp) {
                 break;
-            } 
+            }
             if self.filter_name_in_range(name) {
                 continue;
             }
@@ -115,7 +133,7 @@ impl Range for MemoryRange {
         for ((timestamp, name), _values) in internal.entries.range(self.full_start_bound()..) {
             if self.done_iterating_in_range(*timestamp) {
                 break;
-            } 
+            }
             if self.filter_name_in_range(name) {
                 continue;
             }
@@ -133,16 +151,12 @@ impl Range for MemoryRange {
         for ((timestamp, name), values) in internal.entries.range(self.full_start_bound()..) {
             if self.done_iterating_in_range(*timestamp) {
                 break;
-            } 
+            }
             if self.filter_name_in_range(name) {
                 continue;
             }
             for value in values.iter() {
-                returnable_entries.push(Ok(Entry::new_with_timestamp(
-                    *timestamp,
-                    name.clone(),
-                    value.clone(),
-                )));
+                returnable_entries.push(Ok(Entry::new_with_timestamp(*timestamp, name.clone(), value.clone())));
             }
         }
         Ok(returnable_entries.into_iter())
