@@ -11,7 +11,7 @@ use string_cache::DefaultAtom as Atom;
 
 #[derive(Clone, Default)]
 struct MemoryStoreInternal {
-    entries: BTreeMap<i64, Vec<(Atom, Vec<u8>)>>,
+    entries: BTreeMap<(i64, Atom), Vec<Vec<u8>>>,
     subscribers: HashMap<Atom, Vec<Weak<MemoryStreamIteratorInternal>>>,
 }
 
@@ -24,9 +24,9 @@ impl Store for MemoryStore {
 
         internal
             .entries
-            .entry(entry.timestamp)
+            .entry((entry.timestamp, entry.name.clone()))
             .or_insert_with(Vec::default)
-            .push((entry.name.clone(), entry.value.clone()));
+            .push(entry.value.clone());
 
         if let Some(subscribers) = internal.subscribers.get_mut(&entry.name) {
             let entry = entry.into_owned();
@@ -65,30 +65,60 @@ pub struct MemoryRange {
     name: Option<Atom>,
 }
 
+impl MemoryRange {
+    fn full_start_bound(&self) -> (i64, Atom) {
+        match self.start_bound {
+            Bound::Included(timestamp) => (timestamp, Atom::from("")),
+            Bound::Excluded(timestamp) => (timestamp + 1, Atom::from("")),
+            Bound::Unbounded => (i64::min_value(), Atom::from("")),
+        }
+    }
+
+    fn done_iterating_in_range(&self, timestamp: i64) -> bool {
+        match self.end_bound {
+            Bound::Included(end_bound_timestamp) => timestamp <= end_bound_timestamp,
+            Bound::Excluded(end_bound_timestamp) => timestamp < end_bound_timestamp,
+            Bound::Unbounded => false,
+        }
+    }
+
+    fn filter_name_in_range(&self, name: &Atom) -> bool {
+        if let Some(ref expected_name) = self.name {
+            name != expected_name
+        } else {
+            false
+        }
+    }
+}
+
 impl Range for MemoryRange {
     type Iter = VecIter<Result<Entry, Error>>;
 
     fn count(&self) -> Result<u64, Error> {
         let mut count: u64 = 0;
         let internal = self.internal.lock().unwrap();
-        for (_, range) in internal.entries.range((self.start_bound, self.end_bound)) {
-            if let Some(ref name) = self.name {
-                count += range.iter().filter(|e| &e.0 == name).count() as u64;
-            } else {
-                count += range.len() as u64;
+        for ((timestamp, name), values) in internal.entries.range(self.full_start_bound()..) {
+            if self.done_iterating_in_range(*timestamp) {
+                break;
+            } 
+            if self.filter_name_in_range(name) {
+                continue;
             }
+            count += values.len() as u64;
         }
         Ok(count)
     }
 
     fn remove(self) -> Result<(), Error> {
         let mut internal = self.internal.lock().unwrap();
-        for (_, range) in internal.entries.range_mut((self.start_bound, self.end_bound)) {
-            if let Some(ref name) = self.name {
-                *range = range.drain(..).filter(|e| &e.0 != name).collect();
-            } else {
-                *range = Vec::default();
+        for ((timestamp, name), values) in internal.entries.range_mut(self.full_start_bound()..) {
+            if self.done_iterating_in_range(*timestamp) {
+                break;
+            } 
+            if self.filter_name_in_range(name) {
+                continue;
             }
+            *values = Vec::default();
         }
         Ok(())
     }
@@ -96,23 +126,19 @@ impl Range for MemoryRange {
     fn iter(self) -> Result<Self::Iter, Error> {
         let mut returnable_entries = Vec::default();
         let internal = self.internal.lock().unwrap();
-        for (timestamp, range) in internal.entries.range((self.start_bound, self.end_bound)) {
-            if let Some(ref name) = self.name {
-                for entry in range.iter().filter(|e| &e.0 == name) {
-                    returnable_entries.push(Ok(Entry::new_with_timestamp(
-                        *timestamp,
-                        entry.0.clone(),
-                        entry.1.clone(),
-                    )));
-                }
-            } else {
-                for entry in range.iter() {
-                    returnable_entries.push(Ok(Entry::new_with_timestamp(
-                        *timestamp,
-                        entry.0.clone(),
-                        entry.1.clone(),
-                    )));
-                }
+        for ((timestamp, name), values) in internal.entries.range(self.full_start_bound()..) {
+            if self.done_iterating_in_range(*timestamp) {
+                break;
+            } 
+            if self.filter_name_in_range(name) {
+                continue;
+            }
+            for value in values.iter() {
+                returnable_entries.push(Ok(Entry::new_with_timestamp(
+                    *timestamp,
+                    name.clone(),
+                    value.clone(),
+                )));
             }
         }
         Ok(returnable_entries.into_iter())
