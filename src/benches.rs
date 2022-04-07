@@ -7,6 +7,7 @@ use string_cache::Atom;
 use test::Bencher;
 
 /// Defines a benchmark function.
+#[doc(hidden)]
 #[macro_export]
 macro_rules! define_bench {
     ($name:ident, $store_constructor:expr) => {
@@ -18,6 +19,7 @@ macro_rules! define_bench {
     };
 }
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! bench_store_impl {
     ($code:expr) => {
@@ -26,6 +28,7 @@ macro_rules! bench_store_impl {
     };
 }
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! bench_rangeable_store_impl {
     ($code:expr) => {
