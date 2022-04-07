@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use super::{Entry, Error, Store, SubscribeableStore};
+use crate::{Entry, Error, Store, SubscribeableStore};
 
 use byteorder::{ByteOrder, LittleEndian};
 use crossbeam_channel::{unbounded, Receiver, Sender};
@@ -188,7 +188,7 @@ fn stream_listener(mut conn: Connection, name: Atom, tx: Sender<Result<Entry, Er
 
 #[cfg(test)]
 mod tests {
-    use crate::define_test;
+    use crate::{define_test, test_subscribeable_store_impl};
     test_subscribeable_store_impl!({ super::RedisStreamStore::new("redis://localhost:6379", 100).unwrap() });
 }
 
