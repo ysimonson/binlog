@@ -110,15 +110,19 @@ impl Range for MemoryRange {
     }
 
     fn remove(self) -> Result<(), Error> {
+        let mut removeable_keys = Vec::default();
         let mut internal = self.internal.lock().unwrap();
-        for ((timestamp, name), values) in internal.entries.range_mut(self.full_start_bound()..) {
+        for ((timestamp, name), _values) in internal.entries.range(self.full_start_bound()..) {
             if self.done_iterating_in_range(*timestamp) {
                 break;
             } 
             if self.filter_name_in_range(name) {
                 continue;
             }
-            *values = Vec::default();
+            removeable_keys.push((*timestamp, name.clone()));
+        }
+        for key in removeable_keys {
+            internal.entries.remove(&key);
         }
         Ok(())
     }
