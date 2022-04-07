@@ -25,6 +25,7 @@ macro_rules! bench_store_impl {
     ($code:expr) => {
         define_bench!(push, $code);
         define_bench!(push_parallel, $code);
+        define_bench!(latest, $code);
     };
 }
 
@@ -49,9 +50,10 @@ pub fn push_parallel<S: Store + Clone + 'static>(b: &mut Bencher, store: &S) {
         for i in 1..11 {
             let store = store.clone();
             threads.push(thread::spawn(move || {
-                for j in 1..1001 {
+                let name = Atom::from("bench_push_parallel");
+                for j in 1..101 {
                     let idx = i * j;
-                    let entry = Entry::new_with_timestamp(idx, Atom::from("bench_push_parallel"), vec![1, 2, 3]);
+                    let entry = Entry::new_with_timestamp(idx, name.clone(), vec![1, 2, 3]);
                     store.push(Cow::Owned(entry)).unwrap();
                 }
             }));
@@ -59,6 +61,17 @@ pub fn push_parallel<S: Store + Clone + 'static>(b: &mut Bencher, store: &S) {
         for thread in threads.into_iter() {
             thread.join().unwrap();
         }
+    });
+}
+
+pub fn latest<S: Store + Clone + 'static>(b: &mut Bencher, store: &S) {
+    let name = Atom::from("bench_latest");
+    store
+        .push(Cow::Owned(Entry::new_with_timestamp(1, name.clone(), vec![1, 2, 3])))
+        .unwrap();
+
+    b.iter(|| {
+        store.latest(name.clone()).unwrap();
     });
 }
 
