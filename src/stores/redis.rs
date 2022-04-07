@@ -14,7 +14,7 @@ use redis::{Client, Cmd, Commands, Connection, ConnectionLike, IntoConnectionInf
 use string_cache::DefaultAtom as Atom;
 
 static STREAM_READ_BLOCK_MS: usize = 1000;
-static PUSH_CONNS_MAX_COUNT: usize = 4;
+static CONN_POOL_MAX_COUNT: usize = 4;
 
 macro_rules! get_field_from_stream_map {
     ($tx:expr, $stream_id:expr, $field_name:expr) => {
@@ -49,7 +49,7 @@ fn invalid_data_err<E: Into<Box<dyn StdError + Send + Sync>>>(msg: E) -> Error {
 #[derive(Clone)]
 pub struct RedisStreamStore {
     client: Client,
-    push_conns: Arc<Mutex<Vec<Connection>>>,
+    conn_pool: Arc<Mutex<Vec<Connection>>>,
     max_stream_len: StreamMaxlen,
 }
 
@@ -57,13 +57,36 @@ impl RedisStreamStore {
     pub fn new_with_client(client: Client, max_stream_len: usize) -> Self {
         Self {
             client,
-            push_conns: Arc::new(Mutex::new(Vec::default())),
+            conn_pool: Arc::new(Mutex::new(Vec::default())),
             max_stream_len: StreamMaxlen::Approx(max_stream_len),
         }
     }
 
     pub fn new<T: IntoConnectionInfo>(params: T, max_stream_len: usize) -> Result<Self, Error> {
         Ok(Self::new_with_client(Client::open(params)?, max_stream_len))
+    }
+
+    fn with_connection<T, F>(&self, f: F) -> Result<T, Error>
+    where F: Fn(&Connection) -> Result<T, Error> {
+        let mut conn = {
+            let mut conn_pool = self.conn_pool.lock().unwrap();
+            if let Some(conn) = conn_pool.pop() {
+                conn
+            } else {
+                self.client.get_connection()?
+            }
+        };
+
+        // It's possible that the connection is in a bad state, so don't return
+        // it to the pool if an error occurred.
+        let result = f(&conn)?;
+
+        let mut conn_pool = self.conn_pool.lock().unwrap();
+        if conn_pool.len() < CONN_POOL_MAX_COUNT {
+            conn_pool.push(conn);
+        }
+
+        Ok(result)
     }
 }
 
@@ -78,23 +101,10 @@ impl Store for RedisStreamStore {
         ];
         let cmd = Cmd::xadd_maxlen(channel, self.max_stream_len, "*", payload);
 
-        let mut push_conn = {
-            let mut push_conns = self.push_conns.lock().unwrap();
-            if let Some(conn) = push_conns.pop() {
-                conn
-            } else {
-                self.client.get_connection()?
-            }
-        };
-
-        push_conn.req_command(&cmd)?;
-
-        let mut push_conns = self.push_conns.lock().unwrap();
-        if push_conns.len() < PUSH_CONNS_MAX_COUNT {
-            push_conns.push(push_conn);
-        }
-
-        Ok(())
+        self.with_connection(|conn| {
+            conn.req_command(&cmd)?;
+            Ok(())
+        })
     }
 }
 
