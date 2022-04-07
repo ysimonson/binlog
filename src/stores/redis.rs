@@ -217,12 +217,14 @@ fn stream_listener(mut conn: Connection, name: Atom, tx: Sender<Result<Entry, Er
 
 #[cfg(test)]
 mod tests {
-    use crate::{define_test, test_subscribeable_store_impl};
-    test_subscribeable_store_impl!({ super::RedisStreamStore::new("redis://localhost:6379", 100).unwrap() });
+    use crate::{define_test, test_store_impl, test_subscribeable_store_impl, RedisStreamStore};
+    test_store_impl!(RedisStreamStore::new("redis://localhost:6379", 100).unwrap());
+    test_subscribeable_store_impl!(RedisStreamStore::new("redis://localhost:6379", 100).unwrap());
 }
 
+#[cfg(test)]
 #[cfg(feature = "benches")]
 mod benches {
-    use crate::{bench_store_impl, define_bench};
-    bench_store_impl!({ super::RedisStreamStore::new("redis://localhost:6379", 100).unwrap() });
+    use crate::{bench_store_impl, define_bench, RedisStreamStore};
+    bench_store_impl!(RedisStreamStore::new("redis://localhost:6379", 100).unwrap());
 }

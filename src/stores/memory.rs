@@ -204,26 +204,16 @@ impl Iterator for MemoryStreamIterator {
 
 #[cfg(test)]
 mod tests {
-    use crate::{define_test, test_rangeable_store_impl, test_subscribeable_store_impl};
-    test_rangeable_store_impl!({
-        use super::MemoryStore;
-        MemoryStore::default()
-    });
-    test_subscribeable_store_impl!({
-        use super::MemoryStore;
-        MemoryStore::default()
-    });
+    use crate::{define_test, test_rangeable_store_impl, test_store_impl, test_subscribeable_store_impl, MemoryStore};
+    test_store_impl!(MemoryStore::default());
+    test_rangeable_store_impl!(MemoryStore::default());
+    test_subscribeable_store_impl!(MemoryStore::default());
 }
 
+#[cfg(test)]
 #[cfg(feature = "benches")]
 mod benches {
-    use crate::{bench_rangeable_store_impl, bench_store_impl, define_bench};
-    bench_store_impl!({
-        use crate::MemoryStore;
-        MemoryStore::default()
-    });
-    bench_rangeable_store_impl!({
-        use crate::MemoryStore;
-        MemoryStore::default()
-    });
+    use crate::{bench_rangeable_store_impl, bench_store_impl, define_bench, MemoryStore};
+    bench_store_impl!(MemoryStore::default());
+    bench_rangeable_store_impl!(MemoryStore::default());
 }
