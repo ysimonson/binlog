@@ -1,4 +1,5 @@
 use super::Error;
+use std::cmp::Ordering;
 use std::ops::Bound;
 
 fn unwrap_bound(bound: Bound<&i64>) -> Option<i64> {
@@ -11,14 +12,14 @@ fn unwrap_bound(bound: Bound<&i64>) -> Option<i64> {
 
 pub(crate) fn check_bounds(start_bound: Bound<&i64>, end_bound: Bound<&i64>) -> Result<(), Error> {
     if let (Some(start_ts), Some(end_ts)) = (unwrap_bound(start_bound), unwrap_bound(end_bound)) {
-        if end_ts < start_ts {
-            return Err(Error::BadRange);
-        } else if end_ts == start_ts {
-            if let Bound::Excluded(_) = end_bound {
-                return Err(Error::BadRange);
-            } else if let Bound::Excluded(_) = start_bound {
-                return Err(Error::BadRange);
+        match start_ts.cmp(&end_ts) {
+            Ordering::Less => {}
+            Ordering::Equal => {
+                if matches!(start_bound, Bound::Excluded(_)) || matches!(end_bound, Bound::Excluded(_)) {
+                    return Err(Error::BadRange);
+                }
             }
+            Ordering::Greater => return Err(Error::BadRange),
         }
     }
 
