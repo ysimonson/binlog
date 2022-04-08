@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0 (4/7/2022)
+
+* Rust library
+	* Support for getting the latest value (PR #30)
+	* Accept `Into<Atom>` rather than `Atom`, providing a more ergonomic interface (PR #36)
+	* Fixed range check error found by the fuzzer (PR #35)
+	* Hide test macros from the docs (PR #32)
+	* Reorganize code (PR #31, #27)
+* Python library
+	* Added support for sqlite ranges (PR #37)
+	* Release the GIL where possible for better performance (PR #37)
+* Sqlite store
+	* Removed the global compressor/decompressor for better multithreaded performance (PR #34)
+
 ## 0.2.0 (4/6/2022)
 
 * Redis streaming store (PR #22)
