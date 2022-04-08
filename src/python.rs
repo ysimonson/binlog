@@ -59,8 +59,9 @@ impl SqliteStore {
         })
     }
 
-    pub fn push(&self, entry: Entry) -> PyResult<()> {
-        map_result(self.store.push(Cow::Owned(entry.into())))
+    pub fn push(&self, py: Python, entry: Entry) -> PyResult<()> {
+        let entry = Cow::Owned(entry.into());
+        py.allow_threads(move || map_result(self.store.push(entry)))
     }
 }
 
@@ -78,8 +79,9 @@ impl RedisStreamStore {
         })
     }
 
-    pub fn push(&self, entry: Entry) -> PyResult<()> {
-        map_result(self.store.push(Cow::Owned(entry.into())))
+    pub fn push(&self, py: Python, entry: Entry) -> PyResult<()> {
+        let entry = Cow::Owned(entry.into());
+        py.allow_threads(move || map_result(self.store.push(entry)))
     }
 
     pub fn subscribe(&self, name: String) -> PyResult<RedisStreamIterator> {
