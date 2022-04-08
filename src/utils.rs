@@ -1,11 +1,11 @@
-use std::ops::Bound;
 use super::Error;
+use std::ops::Bound;
 
 fn unwrap_bound(bound: Bound<&i64>) -> Option<i64> {
     match bound {
         Bound::Included(ts) => Some(*ts),
         Bound::Excluded(ts) => Some(*ts),
-        _ => None
+        _ => None,
     }
 }
 
