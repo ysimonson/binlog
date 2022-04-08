@@ -127,7 +127,7 @@ impl SqliteStore {
         }
         Ok(Self {
             pool,
-            compression_level: compression_level.unwrap_or(DEFAULT_COMPRESSION_LEVEL)
+            compression_level: compression_level.unwrap_or(DEFAULT_COMPRESSION_LEVEL),
         })
     }
 
