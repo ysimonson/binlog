@@ -5,7 +5,6 @@ use std::ops;
 use arbitrary::Arbitrary;
 use binlog::{Entry, MemoryStore, Range, RangeableStore, SqliteStore, Store};
 use libfuzzer_sys::fuzz_target;
-use string_cache::DefaultAtom as Atom;
 use tempfile::NamedTempFile;
 
 macro_rules! cmp_result {
@@ -85,7 +84,6 @@ fuzz_target!(|ops: Vec<Op>| {
 
     let get_ranges = |range: ArbitraryMicrosRange, name: Option<String>| {
         let range = range.to_bounds();
-        let name = name.map(Atom::from);
         let memory_range = memory_log.range(range, name.clone());
         let sqlite_range = sqlite_log.range(range, name);
         cmp_result!(memory_range, sqlite_range)
@@ -94,7 +92,7 @@ fuzz_target!(|ops: Vec<Op>| {
     for op in ops {
         match op {
             Op::Push(timestamp, name, value) => {
-                let entry = Entry::new_with_timestamp(timestamp, Atom::from(name), value);
+                let entry = Entry::new_with_timestamp(timestamp, name, value);
                 let memory_value = memory_log.push(Cow::Borrowed(&entry));
                 let sqlite_value = sqlite_log.push(Cow::Owned(entry));
                 cmp!(memory_value, sqlite_value);
@@ -132,7 +130,6 @@ fuzz_target!(|ops: Vec<Op>| {
                 }
             }
             Op::Latest(name) => {
-                let name = Atom::from(name);
                 let memory_value = memory_log.latest(name.clone());
                 let sqlite_value = sqlite_log.latest(name);
                 cmp!(memory_value, sqlite_value);

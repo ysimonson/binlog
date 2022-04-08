@@ -34,7 +34,7 @@ fn main() -> Result<(), Error> {
     }
 
     // Queries are done via `range`. Here we grab entries with any timestamp and any name.
-    let range = store.range(.., None)?;
+    let range = store.range(.., Option::<String>::None)?;
     // Count the number of entries.
     println!("initial count: {}", range.count()?);
     // We can also iterate on the entries.
