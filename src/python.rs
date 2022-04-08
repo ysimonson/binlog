@@ -1,6 +1,7 @@
 use std::borrow::Cow;
+use std::ops::Bound;
 
-use crate::{Error, Store, SubscribeableStore};
+use crate::{Error, Range, RangeableStore, Store, SubscribeableStore};
 
 use pyo3::exceptions::{PyIOError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -62,6 +63,80 @@ impl SqliteStore {
         let entry = Cow::Owned(entry.into());
         py.allow_threads(move || map_result(self.store.push(entry)))
     }
+
+    pub fn range(
+        &self,
+        start_bound: Option<i64>,
+        end_bound: Option<i64>,
+        name: Option<String>,
+    ) -> PyResult<SqliteRange> {
+        let start_bound = match start_bound {
+            Some(ts) => Bound::Included(ts),
+            None => Bound::Unbounded,
+        };
+        let end_bound = match end_bound {
+            Some(ts) => Bound::Excluded(ts),
+            None => Bound::Unbounded,
+        };
+        let range = map_result(self.store.range((start_bound, end_bound), name))?;
+        Ok(SqliteRange { range: Some(range) })
+    }
+}
+
+#[pyclass]
+pub struct SqliteRange {
+    range: Option<crate::SqliteRange>,
+}
+
+#[pymethods]
+impl SqliteRange {
+    pub fn count(&self) -> PyResult<u64> {
+        // Don't consume `self.range` so further operation on `self` can be
+        // run. The downside of this is that we can't release the GIL, so
+        // count is not as cheap as it should be.
+        if let Some(range) = &self.range {
+            map_result(range.count())
+        } else {
+            Err(PyValueError::new_err("range already consumed"))
+        }
+    }
+
+    pub fn remove(&mut self, py: Python) -> PyResult<()> {
+        if let Some(range) = self.range.take() {
+            py.allow_threads(move || map_result(range.remove()))
+        } else {
+            Err(PyValueError::new_err("range already consumed"))
+        }
+    }
+
+    pub fn iter(&mut self) -> PyResult<SqliteRangeIterator> {
+        if let Some(range) = self.range.take() {
+            let iter = map_result(range.iter())?;
+            Ok(SqliteRangeIterator { iter })
+        } else {
+            Err(PyValueError::new_err("range already consumed"))
+        }
+    }
+}
+
+#[pyclass]
+pub struct SqliteRangeIterator {
+    iter: crate::SqliteRangeIterator,
+}
+
+#[pymethods]
+impl SqliteRangeIterator {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python) -> Option<PyObject> {
+        match slf.iter.next() {
+            Some(Ok(entry)) => Some(Entry::from(entry).into_py(py)),
+            Some(Err(err)) => Some(map_result::<()>(Err(err)).unwrap_err().into_py(py)),
+            None => None,
+        }
+    }
 }
 
 #[pyclass]
@@ -112,7 +187,10 @@ impl RedisStreamIterator {
 #[pymodule]
 fn binlog(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<Entry>()?;
-    m.add_class::<RedisStreamStore>()?;
     m.add_class::<SqliteStore>()?;
+    m.add_class::<SqliteRange>()?;
+    m.add_class::<SqliteRangeIterator>()?;
+    m.add_class::<RedisStreamStore>()?;
+    m.add_class::<RedisStreamIterator>()?;
     Ok(())
 }
