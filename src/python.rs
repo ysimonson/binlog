@@ -4,7 +4,6 @@ use crate::{Error, Store, SubscribeableStore};
 
 use pyo3::exceptions::{PyIOError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use string_cache::DefaultAtom as Atom;
 
 fn map_result<T>(res: Result<T, Error>) -> PyResult<T> {
     res.map_err(|err| match err {
@@ -35,7 +34,7 @@ impl Entry {
 
 impl From<Entry> for crate::Entry {
     fn from(entry: Entry) -> crate::Entry {
-        crate::Entry::new_with_timestamp(entry.timestamp, Atom::from(entry.name), entry.value)
+        crate::Entry::new_with_timestamp(entry.timestamp, entry.name, entry.value)
     }
 }
 
@@ -83,7 +82,7 @@ impl RedisStreamStore {
     }
 
     pub fn subscribe(&self, name: String) -> PyResult<RedisStreamIterator> {
-        let iter = map_result(self.store.subscribe(Atom::from(name)))?;
+        let iter = map_result(self.store.subscribe(name))?;
         Ok(RedisStreamIterator { iter })
     }
 }

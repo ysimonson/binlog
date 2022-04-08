@@ -10,17 +10,21 @@ pub struct Entry {
 }
 
 impl Entry {
-    pub fn new(name: Atom, value: Vec<u8>) -> Entry {
+    pub fn new<A: Into<Atom>>(name: A, value: Vec<u8>) -> Entry {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("great scott!!")
             .as_micros()
             .try_into()
             .expect("great scott!!");
-        Self::new_with_timestamp(now, name, value)
+        Self::new_with_timestamp(now, name.into(), value)
     }
 
-    pub fn new_with_timestamp(timestamp: i64, name: Atom, value: Vec<u8>) -> Entry {
-        Self { timestamp, name, value }
+    pub fn new_with_timestamp<A: Into<Atom>>(timestamp: i64, name: A, value: Vec<u8>) -> Entry {
+        Self {
+            timestamp,
+            name: name.into(),
+            value,
+        }
     }
 }

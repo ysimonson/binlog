@@ -1,6 +1,6 @@
 use binlog::{Entry, Error, Range, RangeableStore, SqliteStore, Store};
 use std::borrow::Cow;
-use string_cache::Atom;
+use string_cache::DefaultAtom as Atom;
 
 /// Demonstrates the sqlite store, with results in `example.db`. You may want to delete that before
 /// running this to see the results of this on an empty database.
@@ -17,7 +17,7 @@ fn main() -> Result<(), Error> {
     }
 
     // Queries are done via `range`. Here we grab entries with any timestamp and any name.
-    let range = store.range(.., None)?;
+    let range = store.range(.., Option::<String>::None)?;
     // Count the number of entries.
     println!("initial count: {}", range.count()?);
     // We can also iterate on the entries.

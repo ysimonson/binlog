@@ -165,7 +165,8 @@ impl Store for SqliteStore {
         Ok(())
     }
 
-    fn latest(&self, name: Atom) -> Result<Option<Entry>, Error> {
+    fn latest<A: Into<Atom>>(&self, name: A) -> Result<Option<Entry>, Error> {
+        let name = name.into();
         let conn = self.pool.get()?;
         let mut stmt = conn.prepare_cached("select ts, size, value from log where name = ? order by ts desc")?;
         let row = stmt
@@ -187,11 +188,11 @@ impl Store for SqliteStore {
 impl RangeableStore for SqliteStore {
     type Range = SqliteRange;
 
-    fn range<R: RangeBounds<i64>>(&self, range: R, name: Option<Atom>) -> Result<Self::Range, Error> {
+    fn range<A: Into<Atom>, R: RangeBounds<i64>>(&self, range: R, name: Option<A>) -> Result<Self::Range, Error> {
         utils::check_bounds(range.start_bound(), range.end_bound())?;
         Ok(SqliteRange {
             pool: self.pool.clone(),
-            statement_builder: StatementBuilder::new(range, name),
+            statement_builder: StatementBuilder::new(range, name.map(|n| n.into())),
         })
     }
 }

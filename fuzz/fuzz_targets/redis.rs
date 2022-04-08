@@ -4,7 +4,6 @@ use std::borrow::Cow;
 use arbitrary::Arbitrary;
 use binlog::{Entry, MemoryStore, RedisStreamStore, Store, SubscribeableStore};
 use libfuzzer_sys::fuzz_target;
-use string_cache::DefaultAtom as Atom;
 
 macro_rules! cmp {
     ($memory_value:expr, $sqlite_value:expr) => {
@@ -51,7 +50,6 @@ fuzz_target!(|ops: Vec<Op>| {
                 value,
                 subscription,
             } => {
-                let name = Atom::from(name);
                 let subs = if subscription == Subscription::Before {
                     let memory_sub = memory_log.subscribe(name.clone()).unwrap();
                     let redis_sub = redis_log.subscribe(name.clone()).unwrap();
@@ -80,7 +78,6 @@ fuzz_target!(|ops: Vec<Op>| {
                 }
             }
             Op::Latest { name } => {
-                let name = Atom::from(name);
                 let memory_value = memory_log.latest(name.clone());
                 let redis_value = redis_log.latest(name);
                 cmp!(memory_value, redis_value);
