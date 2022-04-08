@@ -3,7 +3,7 @@ use std::thread;
 
 use crate::{Entry, Range, RangeableStore, Store};
 
-use string_cache::Atom;
+use string_cache::DefaultAtom as Atom;
 use test::Bencher;
 
 /// Defines a benchmark function.
@@ -38,7 +38,7 @@ macro_rules! bench_rangeable_store_impl {
 }
 
 pub fn push<S: Store>(b: &mut Bencher, store: &S) {
-    let entry = Entry::new_with_timestamp(1, Atom::from("bench_push"), vec![1, 2, 3]);
+    let entry = Entry::new_with_timestamp(1, "bench_push", vec![1, 2, 3]);
     b.iter(|| {
         store.push(Cow::Borrowed(&entry)).unwrap();
     });
@@ -77,10 +77,13 @@ pub fn latest<S: Store + Clone + 'static>(b: &mut Bencher, store: &S) {
 
 pub fn iter<S: RangeableStore>(b: &mut Bencher, store: &S) {
     for i in 0..=255u8 {
-        let entry = Entry::new_with_timestamp(i.into(), Atom::from("bench_iter"), vec![i]);
+        let entry = Entry::new_with_timestamp(i.into(), "bench_iter", vec![i]);
         store.push(Cow::Owned(entry)).unwrap();
     }
     b.iter(|| {
-        assert_eq!(store.range(.., None).unwrap().iter().unwrap().count(), 256);
+        assert_eq!(
+            store.range(.., Option::<Atom>::None).unwrap().iter().unwrap().count(),
+            256
+        );
     });
 }

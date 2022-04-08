@@ -113,7 +113,8 @@ impl Store for RedisStreamStore {
         })
     }
 
-    fn latest(&self, name: Atom) -> Result<Option<Entry>, Error> {
+    fn latest<A: Into<Atom>>(&self, name: A) -> Result<Option<Entry>, Error> {
+        let name = name.into();
         let channel = redis_channel(&name);
         let reply: StreamRangeReply = self.with_connection(move |conn| {
             let value = conn.xrevrange_count(channel, "+", "-", 1i8)?;
@@ -135,9 +136,9 @@ impl Store for RedisStreamStore {
 
 impl SubscribeableStore for RedisStreamStore {
     type Subscription = RedisStreamIterator;
-    fn subscribe(&self, name: Atom) -> Result<Self::Subscription, Error> {
+    fn subscribe<A: Into<Atom>>(&self, name: A) -> Result<Self::Subscription, Error> {
         let conn = self.client.get_connection()?;
-        RedisStreamIterator::new(conn, name)
+        RedisStreamIterator::new(conn, name.into())
     }
 }
 

@@ -43,7 +43,8 @@ impl Store for MemoryStore {
         Ok(())
     }
 
-    fn latest(&self, name: Atom) -> Result<Option<Entry>, Error> {
+    fn latest<A: Into<Atom>>(&self, name: A) -> Result<Option<Entry>, Error> {
+        let name = name.into();
         let internal = self.0.lock().unwrap();
         for ((map_timestamp, map_name), map_values) in internal.entries.iter().rev() {
             if map_name != &name {
@@ -61,13 +62,13 @@ impl Store for MemoryStore {
 impl RangeableStore for MemoryStore {
     type Range = MemoryRange;
 
-    fn range<R: RangeBounds<i64>>(&self, range: R, name: Option<Atom>) -> Result<Self::Range, Error> {
+    fn range<A: Into<Atom>, R: RangeBounds<i64>>(&self, range: R, name: Option<A>) -> Result<Self::Range, Error> {
         utils::check_bounds(range.start_bound(), range.end_bound())?;
         Ok(Self::Range {
             internal: self.0.clone(),
             start_bound: range.start_bound().cloned(),
             end_bound: range.end_bound().cloned(),
-            name,
+            name: name.map(|n| n.into()),
         })
     }
 }
@@ -161,13 +162,13 @@ impl Range for MemoryRange {
 
 impl SubscribeableStore for MemoryStore {
     type Subscription = MemoryStreamIterator;
-    fn subscribe(&self, name: Atom) -> Result<Self::Subscription, Error> {
+    fn subscribe<A: Into<Atom>>(&self, name: A) -> Result<Self::Subscription, Error> {
         let (tx, rx) = unbounded();
         let iterator_internal = Arc::new(MemoryStreamIteratorInternal { tx });
         let mut internal = self.0.lock().unwrap();
         internal
             .subscribers
-            .entry(name)
+            .entry(name.into())
             .or_insert_with(Vec::default)
             .push(Arc::downgrade(&iterator_internal));
         Ok(MemoryStreamIterator {
