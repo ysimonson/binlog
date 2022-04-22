@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0 (4/21/2022)
+
+* Redis store
+	* Made pub/sub more resilient (PR #38)
+	* Remove option to set channel size, it is now always 1 (PR #38)
+* Improvements to unit tests (PR #38)
+
 ## 0.3.0 (4/7/2022)
 
 * Rust library
