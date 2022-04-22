@@ -76,8 +76,6 @@ pub fn iter<S: RangeableStore>(store: &S) {
 
 pub fn pubsub<S: SubscribeableStore + Clone>(store: &S) {
     let subscriber = store.subscribe("test_pubsub").unwrap();
-    // Give enough time for the thread to start up
-    std::thread::sleep(std::time::Duration::from_millis(100));
     insert_sample_data(store, "test_pubsub").unwrap();
     let results: VecDeque<Result<Entry, Error>> = subscriber.take(10).collect();
     check_sample_data(results, "test_pubsub").unwrap();

@@ -40,7 +40,7 @@ enum Subscription {
 
 fuzz_target!(|ops: Vec<Op>| {
     let memory_log = MemoryStore::default();
-    let redis_log = RedisStreamStore::new("redis://localhost:6379", 1).unwrap();
+    let redis_log = RedisStreamStore::new("redis://localhost:6379").unwrap();
 
     for op in ops {
         match op {

@@ -50,20 +50,18 @@ fn entry_from_stream_id(stream_id: &StreamId, name: Atom) -> Result<Entry, Error
 pub struct RedisStreamStore {
     client: Client,
     conn_pool: Arc<Mutex<Vec<Connection>>>,
-    max_stream_len: StreamMaxlen,
 }
 
 impl RedisStreamStore {
-    pub fn new_with_client(client: Client, max_stream_len: usize) -> Self {
+    pub fn new_with_client(client: Client) -> Self {
         Self {
             client,
             conn_pool: Arc::new(Mutex::new(Vec::default())),
-            max_stream_len: StreamMaxlen::Approx(max_stream_len),
         }
     }
 
-    pub fn new<T: IntoConnectionInfo>(params: T, max_stream_len: usize) -> Result<Self, Error> {
-        Ok(Self::new_with_client(Client::open(params)?, max_stream_len))
+    pub fn new<T: IntoConnectionInfo>(params: T) -> Result<Self, Error> {
+        Ok(Self::new_with_client(Client::open(params)?))
     }
 
     fn with_connection<T, F>(&self, f: F) -> Result<T, Error>
@@ -99,7 +97,7 @@ impl Store for RedisStreamStore {
         LittleEndian::write_i64(&mut timestamp_bytes, entry.timestamp);
         let cmd = Cmd::xadd_maxlen(
             channel,
-            self.max_stream_len,
+            StreamMaxlen::Approx(1),
             "*",
             &[
                 ("timestamp", timestamp_bytes.as_slice()),
@@ -187,7 +185,7 @@ impl Iterator for RedisStreamIterator {
 
 fn stream_listener(mut conn: Connection, name: Atom, tx: Sender<Result<Entry, Error>>, shutdown: Arc<AtomicBool>) {
     let channels = vec![redis_channel(&name)];
-    let mut last_id = "$".to_string();
+    let mut last_id = "0".to_string();
     let opts = StreamReadOptions::default().block(STREAM_READ_BLOCK_MS);
     loop {
         let reply: StreamReadReply = match conn.xread_options(&channels, &[&last_id], &opts) {
@@ -219,13 +217,13 @@ fn stream_listener(mut conn: Connection, name: Atom, tx: Sender<Result<Entry, Er
 #[cfg(test)]
 mod tests {
     use crate::{define_test, test_store_impl, test_subscribeable_store_impl, RedisStreamStore};
-    test_store_impl!(RedisStreamStore::new("redis://localhost:6379", 100).unwrap());
-    test_subscribeable_store_impl!(RedisStreamStore::new("redis://localhost:6379", 100).unwrap());
+    test_store_impl!(RedisStreamStore::new("redis://localhost:6379").unwrap());
+    test_subscribeable_store_impl!(RedisStreamStore::new("redis://localhost:6379").unwrap());
 }
 
 #[cfg(test)]
 #[cfg(feature = "benches")]
 mod benches {
     use crate::{bench_store_impl, define_bench, RedisStreamStore};
-    bench_store_impl!(RedisStreamStore::new("redis://localhost:6379", 100).unwrap());
+    bench_store_impl!(RedisStreamStore::new("redis://localhost:6379").unwrap());
 }

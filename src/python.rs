@@ -147,9 +147,9 @@ pub struct RedisStreamStore {
 #[pymethods]
 impl RedisStreamStore {
     #[new]
-    pub fn new(connection_url: String, max_stream_len: usize) -> PyResult<Self> {
+    pub fn new(connection_url: String) -> PyResult<Self> {
         Ok(Self {
-            store: map_result(crate::RedisStreamStore::new(connection_url, max_stream_len))?,
+            store: map_result(crate::RedisStreamStore::new(connection_url))?,
         })
     }
 
