@@ -1,14 +1,11 @@
 use std::borrow::Cow;
 use std::error::Error as StdError;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::thread;
 
 use crate::{Entry, Error, Store, SubscribeableStore};
 
 use byteorder::{ByteOrder, LittleEndian};
-use crossbeam_channel::{unbounded, Receiver, Sender};
 use redis::streams::{StreamId, StreamMaxlen, StreamRangeReply, StreamReadOptions, StreamReadReply};
 use redis::{Client, Cmd, Commands, Connection, ConnectionLike, IntoConnectionInfo, RedisError, Value};
 use string_cache::DefaultAtom as Atom;
@@ -136,39 +133,23 @@ impl SubscribeableStore for RedisStreamStore {
     type Subscription = RedisStreamIterator;
     fn subscribe<A: Into<Atom>>(&self, name: A) -> Result<Self::Subscription, Error> {
         let conn = self.client.get_connection()?;
-        RedisStreamIterator::new(conn, name.into())
+        Ok(RedisStreamIterator::new(conn, name.into()))
     }
 }
 
 pub struct RedisStreamIterator {
-    shutdown: Arc<AtomicBool>,
-    rx: Option<Receiver<Result<Entry, Error>>>,
-    listener_thread: Option<thread::JoinHandle<()>>,
+    conn: Connection,
+    name: Atom,
+    last_id: String,
 }
 
 impl RedisStreamIterator {
-    fn new(conn: Connection, name: Atom) -> Result<Self, Error> {
-        let (tx, rx) = unbounded::<Result<Entry, Error>>();
-        let shutdown = Arc::new(AtomicBool::new(false));
-        let listener_thread = {
-            let shutdown = shutdown.clone();
-            thread::spawn(|| stream_listener(conn, name, tx, shutdown))
-        };
-        Ok(RedisStreamIterator {
-            shutdown,
-            rx: Some(rx),
-            listener_thread: Some(listener_thread),
-        })
-    }
-}
-
-impl Drop for RedisStreamIterator {
-    fn drop(&mut self) {
-        self.shutdown.store(true, Ordering::Relaxed);
-        let rx = self.rx.take().unwrap();
-        drop(rx);
-        let listener_thread = self.listener_thread.take().unwrap();
-        listener_thread.join().unwrap();
+    fn new(conn: Connection, name: Atom) -> Self {
+        RedisStreamIterator {
+            conn,
+            name,
+            last_id: "0".to_string(),
+        }
     }
 }
 
@@ -176,39 +157,19 @@ impl Iterator for RedisStreamIterator {
     type Item = Result<Entry, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.rx.as_ref().unwrap().recv() {
-            Ok(value) => Some(value),
-            Err(_) => None,
-        }
-    }
-}
-
-fn stream_listener(mut conn: Connection, name: Atom, tx: Sender<Result<Entry, Error>>, shutdown: Arc<AtomicBool>) {
-    let channels = vec![redis_channel(&name)];
-    let mut last_id = "0".to_string();
-    let opts = StreamReadOptions::default().block(STREAM_READ_BLOCK_MS);
-    loop {
-        let reply: StreamReadReply = match conn.xread_options(&channels, &[&last_id], &opts) {
-            Ok(reply) => reply,
-            Err(err) => {
-                if tx.send(Err(err.into())).is_err() || shutdown.load(Ordering::Relaxed) {
-                    return;
-                } else {
-                    continue;
+        let channels = vec![redis_channel(&self.name)];
+        let opts = StreamReadOptions::default().block(STREAM_READ_BLOCK_MS);
+        loop {
+            let reply: StreamReadReply = match self.conn.xread_options(&channels, &[&self.last_id], &opts) {
+                Ok(reply) => reply,
+                Err(err) => return Some(Err(err.into())),
+            };
+            if let Some(stream_key) = reply.keys.into_iter().next() {
+                if let Some(stream_id) = stream_key.ids.into_iter().next() {
+                    let value = entry_from_stream_id(&stream_id, self.name.clone());
+                    self.last_id = stream_id.id;
+                    return Some(value);
                 }
-            }
-        };
-
-        if reply.keys.is_empty() && shutdown.load(Ordering::Relaxed) {
-            return;
-        }
-
-        for stream_key in reply.keys {
-            for stream_id in stream_key.ids {
-                if tx.send(entry_from_stream_id(&stream_id, name.clone())).is_err() {
-                    return;
-                }
-                last_id = stream_id.id;
             }
         }
     }
