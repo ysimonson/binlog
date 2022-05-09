@@ -2,8 +2,9 @@ use std::borrow::Cow;
 use std::error::Error as StdError;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use crate::{Entry, Error, Store, SubscribeableStore};
+use crate::{Entry, Error, Store, SubscribeableStore, Subscription};
 
 use byteorder::{ByteOrder, LittleEndian};
 use redis::streams::{StreamId, StreamMaxlen, StreamRangeReply, StreamReadOptions, StreamReadReply};
@@ -130,22 +131,22 @@ impl Store for RedisStreamStore {
 }
 
 impl SubscribeableStore for RedisStreamStore {
-    type Subscription = RedisStreamIterator;
+    type Subscription = RedisStreamSubscription;
     fn subscribe<A: Into<Atom>>(&self, name: A) -> Result<Self::Subscription, Error> {
         let conn = self.client.get_connection()?;
-        Ok(RedisStreamIterator::new(conn, name.into()))
+        Ok(RedisStreamSubscription::new(conn, name.into()))
     }
 }
 
-pub struct RedisStreamIterator {
+pub struct RedisStreamSubscription {
     conn: Connection,
     name: Atom,
     last_id: String,
 }
 
-impl RedisStreamIterator {
+impl RedisStreamSubscription {
     fn new(conn: Connection, name: Atom) -> Self {
-        RedisStreamIterator {
+        RedisStreamSubscription {
             conn,
             name,
             last_id: "0".to_string(),
@@ -153,23 +154,24 @@ impl RedisStreamIterator {
     }
 }
 
-impl Iterator for RedisStreamIterator {
-    type Item = Result<Entry, Error>;
-
-    fn next(&mut self) -> Option<Self::Item> {
+impl Subscription for RedisStreamSubscription {
+    fn next(&mut self, timeout: Option<Duration>) -> Result<Option<Entry>, Error> {
         let channels = vec![redis_channel(&self.name)];
-        let opts = StreamReadOptions::default().block(STREAM_READ_BLOCK_MS);
+        let opts = StreamReadOptions::default().block(match timeout {
+            Some(timeout) => timeout.as_millis().try_into().unwrap(),
+            None => STREAM_READ_BLOCK_MS
+        });
         loop {
-            let reply: StreamReadReply = match self.conn.xread_options(&channels, &[&self.last_id], &opts) {
-                Ok(reply) => reply,
-                Err(err) => return Some(Err(err.into())),
-            };
+            let reply: StreamReadReply = self.conn.xread_options(&channels, &[&self.last_id], &opts)?;
             if let Some(stream_key) = reply.keys.into_iter().next() {
                 if let Some(stream_id) = stream_key.ids.into_iter().next() {
-                    let value = entry_from_stream_id(&stream_id, self.name.clone());
+                    let value = entry_from_stream_id(&stream_id, self.name.clone())?;
                     self.last_id = stream_id.id;
-                    return Some(value);
+                    return Ok(Some(value));
                 }
+            }
+            if timeout.is_some() {
+                return Ok(None);
             }
         }
     }

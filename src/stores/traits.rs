@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::ops::RangeBounds;
+use std::time::Duration;
 
 use crate::{Entry, Error};
 
@@ -23,6 +24,10 @@ pub trait Range {
 }
 
 pub trait SubscribeableStore: Store {
-    type Subscription: Iterator<Item = Result<Entry, Error>>;
+    type Subscription: Subscription;
     fn subscribe<A: Into<Atom>>(&self, name: A) -> Result<Self::Subscription, Error>;
+}
+
+pub trait Subscription {
+    fn next(&mut self, timeout: Option<Duration>) -> Result<Option<Entry>, Error>;
 }

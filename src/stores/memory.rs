@@ -2,17 +2,18 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::{Bound, RangeBounds};
 use std::sync::{Arc, Mutex, Weak};
+use std::time::Duration;
 use std::vec::IntoIter as VecIter;
 
-use crate::{utils, Entry, Error, Range, RangeableStore, Store, SubscribeableStore};
+use crate::{utils, Entry, Error, Range, RangeableStore, Store, SubscribeableStore, Subscription};
 
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{unbounded, Receiver, RecvTimeoutError, Sender};
 use string_cache::DefaultAtom as Atom;
 
 #[derive(Clone, Default)]
 struct MemoryStoreInternal {
     entries: BTreeMap<(i64, Atom), Vec<Vec<u8>>>,
-    subscribers: HashMap<Atom, Vec<Weak<MemoryStreamIteratorInternal>>>,
+    subscribers: HashMap<Atom, Vec<Weak<MemoryStreamSubscriptionInternal>>>,
 }
 
 #[derive(Clone, Default)]
@@ -30,7 +31,7 @@ impl Store for MemoryStore {
 
         if let Some(subscribers) = internal.subscribers.get_mut(&entry.name) {
             let entry = entry.into_owned();
-            let mut new_subscribers = Vec::<Weak<MemoryStreamIteratorInternal>>::default();
+            let mut new_subscribers = Vec::<Weak<MemoryStreamSubscriptionInternal>>::default();
             for subscriber in subscribers.drain(..) {
                 if let Some(subscriber) = Weak::upgrade(&subscriber) {
                     subscriber.notify(entry.clone());
@@ -161,45 +162,51 @@ impl Range for MemoryRange {
 }
 
 impl SubscribeableStore for MemoryStore {
-    type Subscription = MemoryStreamIterator;
+    type Subscription = MemoryStreamSubscription;
     fn subscribe<A: Into<Atom>>(&self, name: A) -> Result<Self::Subscription, Error> {
         let (tx, rx) = unbounded();
-        let iterator_internal = Arc::new(MemoryStreamIteratorInternal { tx });
+        let subscription_internal = Arc::new(MemoryStreamSubscriptionInternal { tx });
         let mut internal = self.0.lock().unwrap();
         internal
             .subscribers
             .entry(name.into())
             .or_insert_with(Vec::default)
-            .push(Arc::downgrade(&iterator_internal));
-        Ok(MemoryStreamIterator {
-            _internal: iterator_internal,
+            .push(Arc::downgrade(&subscription_internal));
+        Ok(MemoryStreamSubscription {
+            _internal: subscription_internal,
             rx,
         })
     }
 }
 
-struct MemoryStreamIteratorInternal {
+struct MemoryStreamSubscriptionInternal {
     tx: Sender<Entry>,
 }
 
-impl MemoryStreamIteratorInternal {
+impl MemoryStreamSubscriptionInternal {
     fn notify(&self, entry: Entry) {
         self.tx.send(entry).unwrap();
     }
 }
 
 #[derive(Clone)]
-pub struct MemoryStreamIterator {
-    _internal: Arc<MemoryStreamIteratorInternal>,
+pub struct MemoryStreamSubscription {
+    _internal: Arc<MemoryStreamSubscriptionInternal>,
     rx: Receiver<Entry>,
 }
 
-impl Iterator for MemoryStreamIterator {
-    type Item = Result<Entry, Error>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let value = self.rx.recv().unwrap();
-        Some(Ok(value))
+impl Subscription for MemoryStreamSubscription {
+    fn next(&mut self, timeout: Option<Duration>) -> Result<Option<Entry>, Error> {
+        if let Some(timeout) = timeout {
+            match self.rx.recv_timeout(timeout) {
+                Ok(value) => Ok(Some(value)),
+                Err(RecvTimeoutError::Timeout) => Ok(None),
+                Err(_) => unreachable!(),
+            }
+        } else {
+            let value = self.rx.recv().unwrap();
+            Ok(Some(value))
+        }
     }
 }
 

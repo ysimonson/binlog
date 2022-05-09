@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::VecDeque;
 use string_cache::DefaultAtom as Atom;
 
-use crate::{Entry, Error, Range, RangeableStore, Store, SubscribeableStore};
+use crate::{Entry, Error, Range, RangeableStore, Store, SubscribeableStore, Subscription};
 
 /// Defines a unit test function.
 #[doc(hidden)]
@@ -75,9 +75,12 @@ pub fn iter<S: RangeableStore>(store: &S) {
 }
 
 pub fn pubsub<S: SubscribeableStore + Clone>(store: &S) {
-    let subscriber = store.subscribe("test_pubsub").unwrap();
+    let mut subscriber = store.subscribe("test_pubsub").unwrap();
     insert_sample_data(store, "test_pubsub").unwrap();
-    let results: VecDeque<Result<Entry, Error>> = subscriber.take(10).collect();
+    let mut results = VecDeque::<Result<Entry, Error>>::new();
+    for _i in 0..10 {
+        results.push_back(Ok(subscriber.next(None).unwrap().unwrap()));
+    }
     check_sample_data(results, "test_pubsub").unwrap();
 }
 
