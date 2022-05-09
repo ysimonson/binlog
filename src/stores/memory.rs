@@ -16,14 +16,14 @@ struct MemoryStoreInternal {
 }
 
 struct MemoryStreamSubscriptionInternal {
-    most_recent: Mutex<Option<Entry>>,
+    latest: Mutex<Option<Entry>>,
     cvar: Condvar
 }
 
 impl MemoryStreamSubscriptionInternal {
     fn notify(&self, entry: Entry) {
-        let mut most_recent = self.most_recent.lock().unwrap();
-        *most_recent = Some(entry);
+        let mut latest = self.latest.lock().unwrap();
+        *latest = Some(entry);
         self.cvar.notify_all();
     }
 }
@@ -176,16 +176,20 @@ impl Range for MemoryRange {
 impl SubscribeableStore for MemoryStore {
     type Subscription = MemoryStreamSubscription;
     fn subscribe<A: Into<Atom>>(&self, name: A) -> Result<Self::Subscription, Error> {
+        let name = name.into();
+        let latest = self.latest(&name)?;
         let subscription_internal = Arc::new(MemoryStreamSubscriptionInternal {
-            most_recent: Mutex::new(None),
+            latest: Mutex::new(latest),
             cvar: Condvar::new()
         });
+
         let mut internal = self.0.lock().unwrap();
         internal
             .subscribers
-            .entry(name.into())
+            .entry(name)
             .or_insert_with(Vec::default)
             .push(Arc::downgrade(&subscription_internal));
+
         Ok(MemoryStreamSubscription {
             internal: subscription_internal,
             last_timestamp: None,
@@ -201,29 +205,29 @@ pub struct MemoryStreamSubscription {
 
 impl Subscription for MemoryStreamSubscription {
     fn next(&mut self, timeout: Option<Duration>) -> Result<Option<Entry>, Error> {
-        let mut most_recent = self.internal.most_recent.lock().unwrap();
+        let mut latest = self.internal.latest.lock().unwrap();
 
         loop {
-            if let Some(most_recent) = &*most_recent {
+            if let Some(latest) = &*latest {
                 if let Some(last_timestamp) = self.last_timestamp {
-                    if last_timestamp < most_recent.timestamp {
-                        self.last_timestamp = Some(most_recent.timestamp);
-                        return Ok(Some(most_recent.clone()));
+                    if last_timestamp < latest.timestamp {
+                        self.last_timestamp = Some(latest.timestamp);
+                        return Ok(Some(latest.clone()));
                     }
                 } else {
-                    self.last_timestamp = Some(most_recent.timestamp);
-                    return Ok(Some(most_recent.clone()));
+                    self.last_timestamp = Some(latest.timestamp);
+                    return Ok(Some(latest.clone()));
                 }
             }
 
             if let Some(timeout) = timeout {
-                let result = self.internal.cvar.wait_timeout(most_recent, timeout).unwrap();
+                let result = self.internal.cvar.wait_timeout(latest, timeout).unwrap();
                 if result.1.timed_out() {
                     return Ok(None);
                 }
-                most_recent = result.0;
+                latest = result.0;
             } else {
-                most_recent = self.internal.cvar.wait(most_recent).unwrap();
+                latest = self.internal.cvar.wait(latest).unwrap();
             }
         }
     }
