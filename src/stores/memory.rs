@@ -17,7 +17,7 @@ struct MemoryStoreInternal {
 
 struct MemoryStreamSubscriptionInternal {
     latest: Mutex<Option<Entry>>,
-    cvar: Condvar
+    cvar: Condvar,
 }
 
 impl MemoryStreamSubscriptionInternal {
@@ -180,7 +180,7 @@ impl SubscribeableStore for MemoryStore {
         let latest = self.latest(&name)?;
         let subscription_internal = Arc::new(MemoryStreamSubscriptionInternal {
             latest: Mutex::new(latest),
-            cvar: Condvar::new()
+            cvar: Condvar::new(),
         });
 
         let mut internal = self.0.lock().unwrap();
@@ -200,7 +200,7 @@ impl SubscribeableStore for MemoryStore {
 #[derive(Clone)]
 pub struct MemoryStreamSubscription {
     internal: Arc<MemoryStreamSubscriptionInternal>,
-    last_timestamp: Option<i64>
+    last_timestamp: Option<i64>,
 }
 
 impl Subscription for MemoryStreamSubscription {

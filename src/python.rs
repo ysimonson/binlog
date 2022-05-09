@@ -173,7 +173,7 @@ pub struct RedisStreamSubscription {
 #[pymethods]
 impl RedisStreamSubscription {
     pub fn next(&mut self, py: Python, duration: Option<f32>) -> PyResult<Option<Entry>> {
-        let duration = duration.map(|dur| Duration::from_secs_f32(dur));
+        let duration = duration.map(Duration::from_secs_f32);
         py.allow_threads(move || {
             let entry = map_result(self.subscription.next(duration))?;
             Ok(entry.map(|e| e.into()))

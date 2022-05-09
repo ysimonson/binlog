@@ -159,7 +159,7 @@ impl Subscription for RedisStreamSubscription {
         let channels = vec![redis_channel(&self.name)];
         let opts = StreamReadOptions::default().block(match timeout {
             Some(timeout) => timeout.as_millis().try_into().unwrap(),
-            None => STREAM_READ_BLOCK_MS
+            None => STREAM_READ_BLOCK_MS,
         });
         loop {
             let reply: StreamReadReply = self.conn.xread_options(&channels, &[&self.last_id], &opts)?;
