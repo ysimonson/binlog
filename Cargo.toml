@@ -21,7 +21,6 @@ python = ["pyo3", "redis-store", "sqlite-store"]
 benches = []
 
 [dependencies]
-crossbeam-channel = "0.5.4"
 string_cache = "0.8.4"
 
 # python dependencies

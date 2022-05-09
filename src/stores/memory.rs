@@ -1,19 +1,31 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::{Bound, RangeBounds};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::time::Duration;
 use std::vec::IntoIter as VecIter;
 
 use crate::{utils, Entry, Error, Range, RangeableStore, Store, SubscribeableStore, Subscription};
 
-use crossbeam_channel::{unbounded, Receiver, RecvTimeoutError, Sender};
 use string_cache::DefaultAtom as Atom;
 
 #[derive(Clone, Default)]
 struct MemoryStoreInternal {
     entries: BTreeMap<(i64, Atom), Vec<Vec<u8>>>,
     subscribers: HashMap<Atom, Vec<Weak<MemoryStreamSubscriptionInternal>>>,
+}
+
+struct MemoryStreamSubscriptionInternal {
+    most_recent: Mutex<Option<Entry>>,
+    cvar: Condvar
+}
+
+impl MemoryStreamSubscriptionInternal {
+    fn notify(&self, entry: Entry) {
+        let mut most_recent = self.most_recent.lock().unwrap();
+        *most_recent = Some(entry);
+        self.cvar.notify_all();
+    }
 }
 
 #[derive(Clone, Default)]
@@ -164,8 +176,10 @@ impl Range for MemoryRange {
 impl SubscribeableStore for MemoryStore {
     type Subscription = MemoryStreamSubscription;
     fn subscribe<A: Into<Atom>>(&self, name: A) -> Result<Self::Subscription, Error> {
-        let (tx, rx) = unbounded();
-        let subscription_internal = Arc::new(MemoryStreamSubscriptionInternal { tx });
+        let subscription_internal = Arc::new(MemoryStreamSubscriptionInternal {
+            most_recent: Mutex::new(None),
+            cvar: Condvar::new()
+        });
         let mut internal = self.0.lock().unwrap();
         internal
             .subscribers
@@ -173,39 +187,44 @@ impl SubscribeableStore for MemoryStore {
             .or_insert_with(Vec::default)
             .push(Arc::downgrade(&subscription_internal));
         Ok(MemoryStreamSubscription {
-            _internal: subscription_internal,
-            rx,
+            internal: subscription_internal,
+            last_timestamp: None,
         })
-    }
-}
-
-struct MemoryStreamSubscriptionInternal {
-    tx: Sender<Entry>,
-}
-
-impl MemoryStreamSubscriptionInternal {
-    fn notify(&self, entry: Entry) {
-        self.tx.send(entry).unwrap();
     }
 }
 
 #[derive(Clone)]
 pub struct MemoryStreamSubscription {
-    _internal: Arc<MemoryStreamSubscriptionInternal>,
-    rx: Receiver<Entry>,
+    internal: Arc<MemoryStreamSubscriptionInternal>,
+    last_timestamp: Option<i64>
 }
 
 impl Subscription for MemoryStreamSubscription {
     fn next(&mut self, timeout: Option<Duration>) -> Result<Option<Entry>, Error> {
-        if let Some(timeout) = timeout {
-            match self.rx.recv_timeout(timeout) {
-                Ok(value) => Ok(Some(value)),
-                Err(RecvTimeoutError::Timeout) => Ok(None),
-                Err(_) => unreachable!(),
+        let mut most_recent = self.internal.most_recent.lock().unwrap();
+
+        loop {
+            if let Some(most_recent) = &*most_recent {
+                if let Some(last_timestamp) = self.last_timestamp {
+                    if last_timestamp < most_recent.timestamp {
+                        self.last_timestamp = Some(most_recent.timestamp);
+                        return Ok(Some(most_recent.clone()));
+                    }
+                } else {
+                    self.last_timestamp = Some(most_recent.timestamp);
+                    return Ok(Some(most_recent.clone()));
+                }
             }
-        } else {
-            let value = self.rx.recv().unwrap();
-            Ok(Some(value))
+
+            if let Some(timeout) = timeout {
+                let result = self.internal.cvar.wait_timeout(most_recent, timeout).unwrap();
+                if result.1.timed_out() {
+                    return Ok(None);
+                }
+                most_recent = result.0;
+            } else {
+                most_recent = self.internal.cvar.wait(most_recent).unwrap();
+            }
         }
     }
 }
