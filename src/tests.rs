@@ -1,8 +1,10 @@
 use std::borrow::Cow;
 use std::collections::VecDeque;
-use string_cache::DefaultAtom as Atom;
+use std::time::Duration;
 
-use crate::{Entry, Error, Range, RangeableStore, Store, SubscribeableStore};
+use crate::{Entry, Error, Range, RangeableStore, Store, SubscribeableStore, Subscription};
+
+use string_cache::DefaultAtom as Atom;
 
 /// Defines a unit test function.
 #[doc(hidden)]
@@ -75,10 +77,14 @@ pub fn iter<S: RangeableStore>(store: &S) {
 }
 
 pub fn pubsub<S: SubscribeableStore + Clone>(store: &S) {
-    let subscriber = store.subscribe("test_pubsub").unwrap();
+    let mut subscriber = store.subscribe("test_pubsub").unwrap();
     insert_sample_data(store, "test_pubsub").unwrap();
-    let results: VecDeque<Result<Entry, Error>> = subscriber.take(10).collect();
-    check_sample_data(results, "test_pubsub").unwrap();
+    // should get just the last entry
+    let entry = subscriber.next(None).unwrap().unwrap();
+    assert_eq!(entry, Entry::new_with_timestamp(10, "test_pubsub", vec![10]));
+    // should timeout
+    let entry = subscriber.next(Some(Duration::from_millis(10))).unwrap();
+    assert!(entry.is_none());
 }
 
 pub fn latest<S: Store + Clone>(store: &S) {

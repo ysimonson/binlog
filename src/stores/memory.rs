@@ -1,18 +1,31 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::{Bound, RangeBounds};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Condvar, Mutex, Weak};
+use std::time::Duration;
 use std::vec::IntoIter as VecIter;
 
-use crate::{utils, Entry, Error, Range, RangeableStore, Store, SubscribeableStore};
+use crate::{utils, Entry, Error, Range, RangeableStore, Store, SubscribeableStore, Subscription};
 
-use crossbeam_channel::{unbounded, Receiver, Sender};
 use string_cache::DefaultAtom as Atom;
 
 #[derive(Clone, Default)]
 struct MemoryStoreInternal {
     entries: BTreeMap<(i64, Atom), Vec<Vec<u8>>>,
-    subscribers: HashMap<Atom, Vec<Weak<MemoryStreamIteratorInternal>>>,
+    subscribers: HashMap<Atom, Vec<Weak<MemoryStreamSubscriptionInternal>>>,
+}
+
+struct MemoryStreamSubscriptionInternal {
+    latest: Mutex<Option<Entry>>,
+    cvar: Condvar,
+}
+
+impl MemoryStreamSubscriptionInternal {
+    fn notify(&self, entry: Entry) {
+        let mut latest = self.latest.lock().unwrap();
+        *latest = Some(entry);
+        self.cvar.notify_all();
+    }
 }
 
 #[derive(Clone, Default)]
@@ -30,7 +43,7 @@ impl Store for MemoryStore {
 
         if let Some(subscribers) = internal.subscribers.get_mut(&entry.name) {
             let entry = entry.into_owned();
-            let mut new_subscribers = Vec::<Weak<MemoryStreamIteratorInternal>>::default();
+            let mut new_subscribers = Vec::<Weak<MemoryStreamSubscriptionInternal>>::default();
             for subscriber in subscribers.drain(..) {
                 if let Some(subscriber) = Weak::upgrade(&subscriber) {
                     subscriber.notify(entry.clone());
@@ -161,45 +174,62 @@ impl Range for MemoryRange {
 }
 
 impl SubscribeableStore for MemoryStore {
-    type Subscription = MemoryStreamIterator;
+    type Subscription = MemoryStreamSubscription;
     fn subscribe<A: Into<Atom>>(&self, name: A) -> Result<Self::Subscription, Error> {
-        let (tx, rx) = unbounded();
-        let iterator_internal = Arc::new(MemoryStreamIteratorInternal { tx });
+        let name = name.into();
+        let latest = self.latest(&name)?;
+        let subscription_internal = Arc::new(MemoryStreamSubscriptionInternal {
+            latest: Mutex::new(latest),
+            cvar: Condvar::new(),
+        });
+
         let mut internal = self.0.lock().unwrap();
         internal
             .subscribers
-            .entry(name.into())
+            .entry(name)
             .or_insert_with(Vec::default)
-            .push(Arc::downgrade(&iterator_internal));
-        Ok(MemoryStreamIterator {
-            _internal: iterator_internal,
-            rx,
+            .push(Arc::downgrade(&subscription_internal));
+
+        Ok(MemoryStreamSubscription {
+            internal: subscription_internal,
+            last_timestamp: None,
         })
     }
 }
 
-struct MemoryStreamIteratorInternal {
-    tx: Sender<Entry>,
-}
-
-impl MemoryStreamIteratorInternal {
-    fn notify(&self, entry: Entry) {
-        self.tx.send(entry).unwrap();
-    }
-}
-
 #[derive(Clone)]
-pub struct MemoryStreamIterator {
-    _internal: Arc<MemoryStreamIteratorInternal>,
-    rx: Receiver<Entry>,
+pub struct MemoryStreamSubscription {
+    internal: Arc<MemoryStreamSubscriptionInternal>,
+    last_timestamp: Option<i64>,
 }
 
-impl Iterator for MemoryStreamIterator {
-    type Item = Result<Entry, Error>;
+impl Subscription for MemoryStreamSubscription {
+    fn next(&mut self, timeout: Option<Duration>) -> Result<Option<Entry>, Error> {
+        let mut latest = self.internal.latest.lock().unwrap();
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let value = self.rx.recv().unwrap();
-        Some(Ok(value))
+        loop {
+            if let Some(latest) = &*latest {
+                if let Some(last_timestamp) = self.last_timestamp {
+                    if last_timestamp < latest.timestamp {
+                        self.last_timestamp = Some(latest.timestamp);
+                        return Ok(Some(latest.clone()));
+                    }
+                } else {
+                    self.last_timestamp = Some(latest.timestamp);
+                    return Ok(Some(latest.clone()));
+                }
+            }
+
+            if let Some(timeout) = timeout {
+                let result = self.internal.cvar.wait_timeout(latest, timeout).unwrap();
+                if result.1.timed_out() {
+                    return Ok(None);
+                }
+                latest = result.0;
+            } else {
+                latest = self.internal.cvar.wait(latest).unwrap();
+            }
+        }
     }
 }
 

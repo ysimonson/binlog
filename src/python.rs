@@ -1,7 +1,8 @@
 use std::borrow::Cow;
 use std::ops::Bound;
+use std::time::Duration;
 
-use crate::{Error, Range, RangeableStore, Store, SubscribeableStore};
+use crate::{Error, Range, RangeableStore, Store, SubscribeableStore, Subscription};
 
 use pyo3::exceptions::{PyIOError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -90,12 +91,9 @@ pub struct SqliteRange {
 
 #[pymethods]
 impl SqliteRange {
-    pub fn count(&self) -> PyResult<u64> {
-        // Don't consume `self.range` so further operation on `self` can be
-        // run. The downside of this is that we can't release the GIL, so
-        // count is not as cheap as it should be.
+    pub fn count(&self, py: Python) -> PyResult<u64> {
         if let Some(range) = &self.range {
-            map_result(range.count())
+            py.allow_threads(move || map_result(range.count()))
         } else {
             Err(PyValueError::new_err("range already consumed"))
         }
@@ -109,10 +107,12 @@ impl SqliteRange {
         }
     }
 
-    pub fn iter(&mut self) -> PyResult<SqliteRangeIterator> {
+    pub fn iter(&mut self, py: Python) -> PyResult<SqliteRangeIterator> {
         if let Some(range) = self.range.take() {
-            let iter = map_result(range.iter())?;
-            Ok(SqliteRangeIterator { iter })
+            py.allow_threads(move || {
+                let iter = map_result(range.iter())?;
+                Ok(SqliteRangeIterator { iter })
+            })
         } else {
             Err(PyValueError::new_err("range already consumed"))
         }
@@ -158,29 +158,25 @@ impl RedisStreamStore {
         py.allow_threads(move || map_result(self.store.push(entry)))
     }
 
-    pub fn subscribe(&self, name: String) -> PyResult<RedisStreamIterator> {
-        let iter = map_result(self.store.subscribe(name))?;
-        Ok(RedisStreamIterator { iter })
+    pub fn subscribe(&self, name: String) -> PyResult<RedisStreamSubscription> {
+        let subscription = map_result(self.store.subscribe(name))?;
+        Ok(RedisStreamSubscription { subscription })
     }
 }
 
 #[pyclass]
-pub struct RedisStreamIterator {
-    iter: crate::RedisStreamIterator,
+pub struct RedisStreamSubscription {
+    subscription: crate::RedisStreamSubscription,
 }
 
 #[pymethods]
-impl RedisStreamIterator {
-    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-
-    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python) -> Option<PyObject> {
-        match slf.iter.next() {
-            Some(Ok(entry)) => Some(Entry::from(entry).into_py(py)),
-            Some(Err(err)) => Some(map_result::<()>(Err(err)).unwrap_err().into_py(py)),
-            None => None,
-        }
+impl RedisStreamSubscription {
+    pub fn next(&mut self, py: Python, duration: Option<f32>) -> PyResult<Option<Entry>> {
+        let duration = duration.map(Duration::from_secs_f32);
+        py.allow_threads(move || {
+            let entry = map_result(self.subscription.next(duration))?;
+            Ok(entry.map(|e| e.into()))
+        })
     }
 }
 
@@ -191,6 +187,6 @@ fn binlog(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<SqliteRange>()?;
     m.add_class::<SqliteRangeIterator>()?;
     m.add_class::<RedisStreamStore>()?;
-    m.add_class::<RedisStreamIterator>()?;
+    m.add_class::<RedisStreamSubscription>()?;
     Ok(())
 }

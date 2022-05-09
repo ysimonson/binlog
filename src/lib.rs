@@ -17,10 +17,10 @@ pub mod benches;
 
 pub use self::entry::Entry;
 pub use self::errors::Error;
-pub use self::stores::memory::{MemoryRange, MemoryStore, MemoryStreamIterator};
-pub use self::stores::traits::{Range, RangeableStore, Store, SubscribeableStore};
+pub use self::stores::memory::{MemoryRange, MemoryStore, MemoryStreamSubscription};
+pub use self::stores::traits::{Range, RangeableStore, Store, SubscribeableStore, Subscription};
 
 #[cfg(feature = "redis-store")]
-pub use self::stores::redis::{RedisStreamIterator, RedisStreamStore};
+pub use self::stores::redis::{RedisStreamStore, RedisStreamSubscription};
 #[cfg(feature = "sqlite-store")]
 pub use self::stores::sqlite::{SqliteRange, SqliteRangeIterator, SqliteStore};
