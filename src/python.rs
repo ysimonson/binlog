@@ -91,12 +91,9 @@ pub struct SqliteRange {
 
 #[pymethods]
 impl SqliteRange {
-    pub fn count(&self) -> PyResult<u64> {
-        // Don't consume `self.range` so further operation on `self` can be
-        // run. The downside of this is that we can't release the GIL, so
-        // count is not as cheap as it should be.
+    pub fn count(&self, py: Python) -> PyResult<u64> {
         if let Some(range) = &self.range {
-            map_result(range.count())
+            py.allow_threads(move || map_result(range.count()))
         } else {
             Err(PyValueError::new_err("range already consumed"))
         }
@@ -110,10 +107,12 @@ impl SqliteRange {
         }
     }
 
-    pub fn iter(&mut self) -> PyResult<SqliteRangeIterator> {
+    pub fn iter(&mut self, py: Python) -> PyResult<SqliteRangeIterator> {
         if let Some(range) = self.range.take() {
-            let iter = map_result(range.iter())?;
-            Ok(SqliteRangeIterator { iter })
+            py.allow_threads(move || {
+                let iter = map_result(range.iter())?;
+                Ok(SqliteRangeIterator { iter })
+            })
         } else {
             Err(PyValueError::new_err("range already consumed"))
         }
