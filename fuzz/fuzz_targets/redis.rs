@@ -1,18 +1,19 @@
 #![no_main]
 use std::borrow::Cow;
+use std::time::Duration;
 
 use arbitrary::Arbitrary;
-use binlog::{Entry, MemoryStore, RedisStreamStore, Store, SubscribeableStore};
+use binlog::{Entry, MemoryStore, RedisStreamStore, Store, SubscribeableStore, Subscription};
 use libfuzzer_sys::fuzz_target;
 
 macro_rules! cmp {
-    ($memory_value:expr, $sqlite_value:expr) => {
-        match ($memory_value, $sqlite_value) {
-            (Ok(memory_value), Ok(sqlite_value)) => {
-                assert_eq!(memory_value, sqlite_value);
+    ($memory_value:expr, $redis_value:expr) => {
+        match ($memory_value, $redis_value) {
+            (Ok(memory_value), Ok(redis_value)) => {
+                assert_eq!(memory_value, redis_value);
             }
-            (memory_value, sqlite_value) => {
-                assert_eq!(format!("{:?}", memory_value), format!("{:?}", sqlite_value));
+            (memory_value, redis_value) => {
+                assert_eq!(format!("{:?}", memory_value), format!("{:?}", redis_value));
             }
         }
     };
@@ -24,7 +25,8 @@ enum Op {
         timestamp: i64,
         name: String,
         value: Vec<u8>,
-        subscription: Subscription,
+        subscribe_at: SubscribeAt,
+        timeout: Option<Duration>
     },
     Latest {
         name: String,
@@ -32,7 +34,7 @@ enum Op {
 }
 
 #[derive(Arbitrary, Clone, Debug, PartialEq)]
-enum Subscription {
+enum SubscribeAt {
     None,
     Before,
     After,
@@ -48,9 +50,10 @@ fuzz_target!(|ops: Vec<Op>| {
                 timestamp,
                 name,
                 value,
-                subscription,
+                subscribe_at,
+                timeout,
             } => {
-                let subs = if subscription == Subscription::Before {
+                let subs = if subscribe_at == SubscribeAt::Before {
                     let memory_sub = memory_log.subscribe(name.clone()).unwrap();
                     let redis_sub = redis_log.subscribe(name.clone()).unwrap();
                     Some((memory_sub, redis_sub))
@@ -63,16 +66,19 @@ fuzz_target!(|ops: Vec<Op>| {
                 let redis_value = redis_log.push(Cow::Owned(entry));
                 cmp!(memory_value, redis_value);
 
-                match subscription {
-                    Subscription::Before => {
+                match subscribe_at {
+                    SubscribeAt::Before => {
                         let (mut memory_sub, mut redis_sub) = subs.unwrap();
-                        let memory_sub_value = memory_sub.next().unwrap();
-                        let redis_sub_value = redis_sub.next().unwrap();
+                        let memory_sub_value = memory_sub.next(timeout);
+                        let redis_sub_value = redis_sub.next(timeout);
                         cmp!(memory_sub_value, redis_sub_value);
                     }
-                    Subscription::After => {
-                        memory_log.subscribe(name.clone()).unwrap();
-                        redis_log.subscribe(name).unwrap();
+                    SubscribeAt::After => {
+                        let mut memory_sub = memory_log.subscribe(name.clone()).unwrap();
+                        let mut redis_sub = redis_log.subscribe(name).unwrap();
+                        let memory_sub_value = memory_sub.next(timeout);
+                        let redis_sub_value = redis_sub.next(timeout);
+                        cmp!(memory_sub_value, redis_sub_value);
                     }
                     _ => {}
                 }
