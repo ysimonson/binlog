@@ -95,7 +95,7 @@ impl Store for RedisStreamStore {
         LittleEndian::write_i64(&mut timestamp_bytes, entry.timestamp);
         let cmd = Cmd::xadd_maxlen(
             channel,
-            StreamMaxlen::Approx(1),
+            StreamMaxlen::Equals(1),
             "*",
             &[
                 ("timestamp", timestamp_bytes.as_slice()),
