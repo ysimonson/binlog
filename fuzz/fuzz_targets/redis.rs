@@ -26,7 +26,7 @@ enum Op {
         name: String,
         value: Vec<u8>,
         subscribe_at: SubscribeAt,
-        timeout: Option<Duration>
+        timeout: Option<Duration>,
     },
     Latest {
         name: String,
