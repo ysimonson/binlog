@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0 (5/8/2022)
+
+* Support for pub/sub timeouts
+* Redis store
+	* Removed separate thread for pub/sub iterators
+
 ## 0.4.0 (4/21/2022)
 
 * Redis store
